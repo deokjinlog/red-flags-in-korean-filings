@@ -1,0 +1,45 @@
+# ⚠️ RISK(side-effect): 자격증명이 평문이고 포트를 호스트 전역(0.0.0.0)으로 공개한다.
+# 로컬 개발 전용 설정이며, 외부 노출 환경에서는 반드시 .env 주입 + 127.0.0.1 바인딩으로 바꿀 것.
+# 이름 있는 볼륨(neo4j-data / pg-data)은 down 해도 남으므로 스키마 변경 시 -v 로 명시 삭제해야 한다.
+# — by main(3-checklist: shared state)
+services:
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: dartweave-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/dartweave1
+      NEO4J_PLUGINS: '["graph-data-science"]'
+      NEO4J_dbms_security_procedures_unrestricted: gds.*
+      NEO4J_dbms_security_procedures_allowlist: gds.*
+      NEO4J_server_memory_heap_max__size: 2G
+    volumes:
+      - neo4j-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  postgres:
+    image: postgres:16.6
+    container_name: dartweave-postgres
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_DB: dartweave
+      POSTGRES_USER: dartweave
+      POSTGRES_PASSWORD: dartweave
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dartweave"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  neo4j-data:
+  pg-data:
