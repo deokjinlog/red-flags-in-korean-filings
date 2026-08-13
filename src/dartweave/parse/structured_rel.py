@@ -17,6 +17,19 @@ def parse_ratio(raw: Any) -> float | None:
         return None
 
 
+# 실데이터 반영: 「최대주주 현황」 응답은 개별 주주 행 사이에 소계/합계 행을 섞어 준다
+# (nm="계", stock_knd 가 "보통주"/"기타"/"합계" 인 행). "계" 는 주주가 아니라 요약이므로
+# 엣지로 만들면 지분 합계가 정확히 두 배가 되어 가짜 1급 모순이 생성된다.
+# 실측: 티씨케이 50.4%+계 50.4%=100.8% / 삼성바이오로직스 74.35%×2=148.7%
+_AGGREGATE_NAMES = frozenset({"계", "합계", "소계", "총계"})
+
+
+def is_aggregate_row(item: dict[str, Any]) -> bool:
+    """소계·합계 행인가. 이름에서 공백을 지우고 판정한다 (실데이터에 '김 형 관' 같은 표기가 있음)."""
+    nm = str(item.get("nm", "")).replace(" ", "").strip()
+    return nm in _AGGREGATE_NAMES
+
+
 def parse_qty(raw: Any) -> int | None:
     """'298,818,100' 같은 주식수. 지분율과 달리 분모가 없어 신고서 간 직접 비교가 된다."""
     text = str(raw or "").strip().replace(",", "")
@@ -36,6 +49,8 @@ def normalize_as_of(raw: Any) -> str | None:
 def parse_major_shareholder(payload: dict[str, Any]) -> list[RelationEdge]:
     edges: list[RelationEdge] = []
     for item in payload.get("list", []):
+        if is_aggregate_row(item):
+            continue
         rcept_no = str(item.get("rcept_no", "")).strip()
         target = str(item.get("corp_code", "")).strip()
         edges.append(

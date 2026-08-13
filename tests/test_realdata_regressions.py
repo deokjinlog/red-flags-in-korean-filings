@@ -220,3 +220,70 @@ def test_share_qty_is_parsed_from_both_filings():
     )[0]
     assert sh.share_qty == inv.share_qty == 298_818_100
     assert sh.share_pct != inv.share_pct  # 분모가 달라 지분율은 어긋난다
+
+
+# --- D6: 소계/합계 행이 개별 주주와 함께 합산됨 ------------------------------
+
+
+def _sh_row(nm: str, pct: str, knd: str = "보통주") -> dict:
+    return {
+        "rcept_no": "20250318001131",
+        "corp_code": "00161383",
+        "stock_knd": knd,
+        "nm": nm,
+        "trmend_posesn_stock_qota_rt": pct,
+        "stlm_dt": "2024-12-31",
+    }
+
+
+def test_aggregate_rows_are_not_shareholders():
+    """실측: 응답은 개별 주주 사이에 nm='계' 요약 행을 섞어 준다.
+
+    '계' 는 주주가 아니다. 엣지로 만들면 지분 합계가 정확히 두 배가 된다
+    (티씨케이 50.4%+계 50.4%=100.8%, 삼성바이오로직스 74.35%x2=148.7%).
+    """
+    payload = {
+        "status": "000",
+        "list": [
+            _sh_row("TOKAI CARBON CO.,LTD.", "50.4"),
+            _sh_row("계", "50.4"),
+            _sh_row("계", "-", knd="기타"),
+            _sh_row("계", "50.4", knd="합계"),
+        ],
+    }
+    edges = parse_major_shareholder(payload)
+    assert [e.source_name for e in edges] == ["TOKAI CARBON CO.,LTD."]
+    assert detect_grade_a(edges) == []
+
+
+def test_spaced_person_names_are_kept():
+    """실데이터에 '김 형 관' 처럼 공백이 낀 실명이 있다. 요약 행 판정에 걸리면 안 된다."""
+    payload = {"status": "000", "list": [_sh_row("김 형 관", "0.00")]}
+    assert [e.source_name for e in parse_major_shareholder(payload)] == ["김 형 관"]
+
+
+# --- D7: 주식수 반올림 단위 차이 --------------------------------------------
+
+
+def test_thousand_share_rounding_is_not_a_contradiction():
+    """실측: 「타법인 출자현황」은 천주 단위로 반올림해 신고하는 경우가 있다.
+
+    삼성전자 -> 삼성전기: 17,693,084 (정확) vs 17,693,000 (반올림).
+    정확 일치로 비교하면 삼성 계열 전체가 모순으로 뜬다 (7건 관측).
+    """
+    a = _qty_edge(23.69, 17_693_084)
+    b = _qty_edge(23.7, 17_693_000)
+    assert compare_scope(a, b) is Verdict.AGREE
+
+
+def test_rounding_up_case_also_agrees():
+    """13,462,673 -> 13,463,000 처럼 올림된 사례도 흡수해야 한다."""
+    assert compare_scope(_qty_edge(19.58, 13_462_673), _qty_edge(19.6, 13_463_000)) is Verdict.AGREE
+    assert compare_scope(_qty_edge(5.1, 2_004_717), _qty_edge(5.1, 2_005_000)) is Verdict.AGREE
+
+
+def test_rounding_tolerance_does_not_swallow_real_gaps():
+    """반올림 보정이 진짜 차이까지 덮으면 검출기가 무의미해진다."""
+    a = _qty_edge(5.01, 298_818_100)
+    b = _qty_edge(5.01, 250_000_000)
+    assert compare_scope(a, b) is Verdict.MISMATCH

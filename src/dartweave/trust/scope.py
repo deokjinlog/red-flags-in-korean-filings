@@ -22,6 +22,30 @@ class Verdict(Enum):
     CHANGE = "change"
 
 
+QTY_PRECISION_CAP = 1000  # 실측된 최대 반올림 단위(천주). 이보다 거칠게는 안 본다.
+
+
+def reported_precision(n: int) -> int:
+    """신고된 주식수의 자릿수 단위를 추정한다 (17,693,000 → 1000).
+
+    실측: 「타법인 출자현황」은 천주 단위로 반올림해 신고하는 경우가 있는데
+    (17,693,084 → 17,693,000), 「최대주주 현황」은 정확한 수를 준다.
+    정확 일치로 비교하면 이 표기 차이가 전부 모순으로 둔갑한다.
+    """
+    if n == 0:
+        return 1
+    p = 1
+    while p < QTY_PRECISION_CAP and n % (p * 10) == 0:
+        p *= 10
+    return p
+
+
+def qty_agrees(a: int, b: int) -> bool:
+    """거친 쪽의 신고 단위에 맞춰 양쪽을 반올림한 뒤 비교한다."""
+    step = max(reported_precision(a), reported_precision(b))
+    return round(a / step) == round(b / step)
+
+
 def scope_key(edge: RelationEdge) -> tuple[str, str]:
     """기준일이 있으면 **기준일만** 쓴다. 없을 때만 접수연도로 폴백.
 
@@ -45,7 +69,7 @@ def compare_scope(a: RelationEdge, b: RelationEdge) -> Verdict:
     # 4.4%(총발행주식 기준)로 신고한다. 지분율만 보면 분모 차이가 모순으로 둔갑하고,
     # 우선주를 발행한 거의 모든 기업에서 같은 오탐이 발생한다.
     if a.share_qty is not None and b.share_qty is not None:
-        return Verdict.AGREE if a.share_qty == b.share_qty else Verdict.MISMATCH
+        return Verdict.AGREE if qty_agrees(a.share_qty, b.share_qty) else Verdict.MISMATCH
 
     if a.share_pct is None or b.share_pct is None:
         return Verdict.AGREE if a.share_pct == b.share_pct else Verdict.MISMATCH
