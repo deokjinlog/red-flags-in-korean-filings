@@ -91,3 +91,55 @@ def parse_major_holding(payload: dict[str, Any]) -> list[RelationEdge]:
             )
         )
     return edges
+
+
+def parse_executives(payload: dict[str, Any]) -> list[RelationEdge]:
+    """임원 현황 — 동일인이 여러 회사에 걸리면 그게 겸직 네트워크가 된다."""
+    edges: list[RelationEdge] = []
+    for item in payload.get("list", []):
+        name = str(item.get("nm", "")).strip()
+        if not name:
+            continue
+        rcept_no = str(item.get("rcept_no", "")).strip()
+        target = str(item.get("corp_code", "")).strip()
+        edges.append(
+            RelationEdge(
+                edge_type=EdgeType.EXECUTIVE_OF,
+                source_name=name,
+                source_corp_code=None,
+                target_name=None,
+                target_corp_code=target,
+                rcept_no=rcept_no,
+                fiscal_year=rcept_no[:4],
+                as_of=normalize_as_of(item.get("stlm_dt")),
+                source=Source.STRUCTURED,
+                reporter_corp_code=target,
+            )
+        )
+    return edges
+
+
+def parse_auditor(payload: dict[str, Any]) -> list[RelationEdge]:
+    """회계감사인 — 대조 상대가 없어 T2 로 남는다."""
+    edges: list[RelationEdge] = []
+    for item in payload.get("list", []):
+        auditor = str(item.get("adtor", "")).strip()
+        if not auditor:
+            continue
+        rcept_no = str(item.get("rcept_no", "")).strip()
+        company = str(item.get("corp_code", "")).strip()
+        edges.append(
+            RelationEdge(
+                edge_type=EdgeType.AUDITED_BY,
+                source_name="",
+                source_corp_code=company,
+                target_name=auditor,
+                target_corp_code=None,
+                rcept_no=rcept_no,
+                fiscal_year=rcept_no[:4],
+                as_of=normalize_as_of(item.get("stlm_dt")),
+                source=Source.STRUCTURED,
+                reporter_corp_code=company,
+            )
+        )
+    return edges
