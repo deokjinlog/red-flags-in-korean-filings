@@ -287,3 +287,75 @@ def test_rounding_tolerance_does_not_swallow_real_gaps():
     a = _qty_edge(5.01, 298_818_100)
     b = _qty_edge(5.01, 250_000_000)
     assert compare_scope(a, b) is Verdict.MISMATCH
+
+
+# --- D9: 개별 주주 축에도 주식종류 통합 문제 --------------------------------
+
+
+def test_share_classes_are_summed_before_cross_check():
+    """실측: 한화 -> 한화솔루션 62,420,460(보통주) + 641,746(기타) = 63,062,206(통합).
+
+    「최대주주 현황」은 종류별로 행이 나뉘고 「타법인 출자현황」은 종류 통합이다.
+    종류별 행 하나씩만 맞대면 나머지 종류가 통째로 차이로 잡혀
+    지주회사 계열 전체가 CONFLICT 로 뜬다 (실측 6건).
+    """
+    from dartweave.trust.crosscheck import CrossResult, cross_check_structured
+
+    def sh(knd: str, qty: int, pct: float) -> RelationEdge:
+        return RelationEdge(
+            edge_type=EdgeType.MAJOR_SHAREHOLDER_OF,
+            source_name="(주)한화",
+            source_corp_code=None,
+            target_name=None,
+            target_corp_code="TGT",
+            rcept_no="20250311000001",
+            fiscal_year="2025",
+            as_of="20241231",
+            source=Source.STRUCTURED,
+            share_pct=pct,
+            share_qty=qty,
+            stock_knd=knd,
+        )
+
+    inv = RelationEdge(
+        edge_type=EdgeType.INVESTS_IN,
+        source_name="",
+        source_corp_code="HANWHA",
+        target_name="한화솔루션",
+        target_corp_code=None,
+        rcept_no="20251218000270",
+        fiscal_year="2025",
+        as_of="20241231",
+        source=Source.STRUCTURED,
+        share_pct=36.15,
+        share_qty=63_062_206,
+    )
+
+    results = cross_check_structured(
+        [sh("보통주", 62_420_460, 36.31), sh("기타", 641_746, 24.92)],
+        [inv],
+        {"(주)한화": "HANWHA", "한화솔루션": "TGT"},
+        {},
+    )
+    assert {r.status for r in results} == {CrossResult.CONFIRMED}
+
+
+def test_summing_does_not_hide_a_real_gap():
+    """합산이 진짜 차이까지 덮으면 검출기가 무의미해진다."""
+    from dartweave.trust.crosscheck import CrossResult, cross_check_structured
+
+    sh = RelationEdge(
+        edge_type=EdgeType.MAJOR_SHAREHOLDER_OF,
+        source_name="A", source_corp_code=None, target_name=None,
+        target_corp_code="TGT", rcept_no="20250311000001", fiscal_year="2025",
+        as_of="20241231", source=Source.STRUCTURED, share_pct=10.0,
+        share_qty=1_000_000, stock_knd="보통주",
+    )
+    inv = RelationEdge(
+        edge_type=EdgeType.INVESTS_IN, source_name="", source_corp_code="H",
+        target_name="T", target_corp_code=None, rcept_no="r", fiscal_year="2025",
+        as_of="20241231", source=Source.STRUCTURED, share_pct=5.0,
+        share_qty=500_000,
+    )
+    results = cross_check_structured([sh], [inv], {"A": "H", "T": "TGT"}, {})
+    assert results[0].status is CrossResult.CONFLICT
