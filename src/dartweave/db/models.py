@@ -1,0 +1,121 @@
+"""Postgres 원장. 그래프는 Neo4j 가 맡고, 여기는 상태·이력·검수만 담는다."""
+from __future__ import annotations
+
+from datetime import datetime
+
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    Integer,
+    String,
+    Text,
+    func,
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+# ⚠️ RISK(breaking): 마이그레이션 도구가 없다. 스키마는 create_all 로만 만들어지므로
+# 아래 컬럼을 나중에 바꾸면 기존 DB에 자동 반영되지 않는다 (조용히 어긋난 채로 돈다).
+# 컬럼 변경 시 docker compose down -v 로 볼륨을 비우거나 마이그레이션을 도입할 것.
+# — by main(3-checklist: public schema change)
+class Base(DeclarativeBase):
+    pass
+
+
+class Company(Base):
+    __tablename__ = "company"
+    corp_code: Mapped[str] = mapped_column(String(8), primary_key=True)
+    corp_name: Mapped[str] = mapped_column(String(200))
+    stock_code: Mapped[str | None] = mapped_column(String(6))
+    corp_cls: Mapped[str | None] = mapped_column(String(1))
+    induty_code: Mapped[str | None] = mapped_column(String(10))
+    selected: Mapped[bool] = mapped_column(Boolean, default=False)
+    # AC-1: 선정 사유를 컬럼으로 강제 — 수동 보정이 기록 없이 일어나는 걸 막는다
+    select_reason: Mapped[str | None] = mapped_column(Text)
+
+
+class Disclosure(Base):
+    __tablename__ = "disclosure"
+    rcept_no: Mapped[str] = mapped_column(String(14), primary_key=True)
+    corp_code: Mapped[str] = mapped_column(String(8), index=True)
+    report_nm: Mapped[str] = mapped_column(String(300))
+    rcept_dt: Mapped[str] = mapped_column(String(8))
+    fiscal_year: Mapped[str] = mapped_column(String(4), index=True)
+    as_of: Mapped[str | None] = mapped_column(String(8))
+    fetch_status: Mapped[str] = mapped_column(String(20), default="pending")
+    # AC-2: 실패를 침묵으로 넘기지 않는다
+    fail_reason: Mapped[str | None] = mapped_column(Text)
+
+
+class ExtractionRun(Base):
+    __tablename__ = "extraction_run"
+    run_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    model: Mapped[str] = mapped_column(String(100))
+    prompt_version: Mapped[str] = mapped_column(String(50))
+    started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class PrecisionSample(Base):
+    __tablename__ = "precision_sample"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    edge_key: Mapped[str] = mapped_column(String(300), index=True)
+    rcept_no: Mapped[str] = mapped_column(String(14))
+    snippet: Mapped[str] = mapped_column(Text)
+    confidence: Mapped[float | None] = mapped_column(Float)
+    verdict: Mapped[str | None] = mapped_column(String(20))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class PrecisionTable(Base):
+    __tablename__ = "precision_table"
+    conf_bucket: Mapped[str] = mapped_column(String(20), primary_key=True)
+    n_sample: Mapped[int] = mapped_column(Integer, default=0)
+    n_correct: Mapped[int] = mapped_column(Integer, default=0)
+    observed_precision: Mapped[float | None] = mapped_column(Float)
+
+
+class EntityAlias(Base):
+    __tablename__ = "entity_alias"
+    surface_form: Mapped[str] = mapped_column(String(300), primary_key=True)
+    corp_code: Mapped[str] = mapped_column(String(8), index=True)
+    source: Mapped[str] = mapped_column(String(10), default="auto")
+    added_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class UnresolvedMention(Base):
+    __tablename__ = "unresolved_mention"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    surface_form: Mapped[str] = mapped_column(String(300), index=True)
+    rcept_no: Mapped[str] = mapped_column(String(14))
+    snippet: Mapped[str | None] = mapped_column(Text)
+    occurrences: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(20), default="open")
+
+
+class RelationChange(Base):
+    """결정 5 — 시점차는 버리지 않고 여기 적립한다."""
+
+    __tablename__ = "relation_change"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    edge_key: Mapped[str] = mapped_column(String(300), index=True)
+    from_fiscal_year: Mapped[str] = mapped_column(String(4))
+    to_fiscal_year: Mapped[str] = mapped_column(String(4))
+    from_value: Mapped[str | None] = mapped_column(String(100))
+    to_value: Mapped[str | None] = mapped_column(String(100))
+    from_rcept_no: Mapped[str] = mapped_column(String(14))
+    to_rcept_no: Mapped[str] = mapped_column(String(14))
+
+
+class Contradiction(Base):
+    """결정 6 — 모순 검출 결과의 영구 기록. verdict 는 층2 워크벤치가 채운다."""
+
+    __tablename__ = "contradiction"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    grade: Mapped[str] = mapped_column(String(1), index=True)
+    edge_key: Mapped[str] = mapped_column(String(300), index=True)
+    detail: Mapped[dict] = mapped_column(JSON)
+    detected_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    verdict: Mapped[str | None] = mapped_column(String(20))
+    verdict_by: Mapped[str | None] = mapped_column(String(100))
