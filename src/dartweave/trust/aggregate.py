@@ -21,13 +21,28 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from dartweave.parse.structured_rel import is_aggregate_row, normalize_as_of, parse_qty, parse_ratio
+from dartweave.parse.structured_rel import (
+    is_aggregate_row,
+    normalize_as_of,
+    parse_qty,
+    parse_ratio,
+)
+from dartweave.resolve.normalize import normalize_name
 from dartweave.trust.scope import qty_agrees
 
 
 @dataclass(frozen=True)
 class AggregateHolding:
-    """최대주주 현황의 `계` 행 — 최대주주 본인 + 특별관계자 합산."""
+    """최대주주 현황의 `계` 행 — 최대주주 본인 + 특별관계자 합산.
+
+    `members` 는 그 합계를 이루는 **특별관계자 명단**(정규화된 이름)이다.
+    이게 없으면 국민연금이나 외국계 운용사처럼 무관한 보고자의 대량보유보고와 맞대게
+    되어 전건 오탐이 된다 (실측: 삼성전자우 계행 0.12% vs 삼성물산 보고 20.07%).
+
+    최대주주 **본인**이 아니라 명단 전체로 판정하는 이유: 대량보유보고의 대표보고자가
+    최대 지분권자와 다를 수 있다. 실측으로 삼성전자의 최대주주 본인은 삼성생명(8.51%)
+    이지만 대량보유 보고자는 삼성물산(5.01%)이다. 둘 다 같은 특별관계자 그룹이다.
+    """
 
     corp_code: str
     stock_knd: str
@@ -35,6 +50,7 @@ class AggregateHolding:
     share_qty: int | None
     share_pct: float | None
     rcept_no: str
+    members: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -63,11 +79,27 @@ class AggCheck:
     detail: dict[str, Any] | None = None
 
 
+def group_members(payload: dict[str, Any]) -> frozenset[str]:
+    """합계를 이루는 개별 주주(특별관계자) 이름 집합. 정규화해서 담는다."""
+    return frozenset(
+        normalize_name(str(item.get("nm", "")))
+        for item in payload.get("list", [])
+        if not is_aggregate_row(item) and str(item.get("nm", "")).strip()
+    )
+
+
 def parse_holding_aggregates(payload: dict[str, Any]) -> list[AggregateHolding]:
-    """`계` 행만 뽑는다. 개별 주주 행은 crosscheck 축이 가져간다."""
+    """`계` 행만 뽑는다. 개별 주주 행은 crosscheck 축이 가져간다.
+
+    ⚠️ 보통주 계 행만 대상으로 한다. 「대량보유 상황보고」의 '주식등' 은 종류 구분 없이
+    통합 집계라, 우선주 계 행과 맞대면 자릿수가 다른 비교가 되어 전건 오탐이 된다.
+    """
+    members = group_members(payload)
     out: list[AggregateHolding] = []
     for item in payload.get("list", []):
         if not is_aggregate_row(item):
+            continue
+        if str(item.get("stock_knd", "")).replace(" ", "") != "보통주":
             continue
         pct = parse_ratio(item.get("trmend_posesn_stock_qota_rt"))
         qty = parse_qty(item.get("trmend_posesn_stock_co"))
@@ -81,6 +113,7 @@ def parse_holding_aggregates(payload: dict[str, Any]) -> list[AggregateHolding]:
                 share_qty=qty,
                 share_pct=pct,
                 rcept_no=str(item.get("rcept_no", "")).strip(),
+                members=members,
             )
         )
     return out
@@ -135,10 +168,17 @@ def cross_check_aggregate(
 
     results: list[AggCheck] = []
     for agg in aggregates:
-        if not agg.as_of:
+        if not agg.as_of or not agg.members:
             results.append(AggCheck(agg, AggResult.NO_REPORT))
             continue
-        counterpart = latest_report_before(by_corp.get(agg.corp_code, []), agg.as_of)
+        # 같은 그룹의 보고만 짝지운다. 국민연금·외국계 운용사도 각자 5% 보고를 내므로
+        # 보고자를 안 가리면 무관한 그룹끼리 비교하게 된다.
+        same_group = [
+            r
+            for r in by_corp.get(agg.corp_code, [])
+            if normalize_name(r.reporter) in agg.members
+        ]
+        counterpart = latest_report_before(same_group, agg.as_of)
         if counterpart is None:
             results.append(AggCheck(agg, AggResult.NO_REPORT))
             continue

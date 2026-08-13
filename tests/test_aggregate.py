@@ -8,6 +8,7 @@ from dartweave.parse.structured_rel import parse_major_shareholder
 from dartweave.trust.aggregate import (
     AggResult,
     cross_check_aggregate,
+    group_members,
     latest_report_before,
     parse_holding_aggregates,
     parse_major_reports,
@@ -22,8 +23,19 @@ HYSLR = {
             "corp_code": "00126380",
             "stock_knd": "보통주",
             "nm": "삼성생명보험㈜",
+            "relate": "최대주주 본인",
             "trmend_posesn_stock_co": "508,157,148",
             "trmend_posesn_stock_qota_rt": "8.51",
+            "stlm_dt": "2024-12-31",
+        },
+        {
+            "rcept_no": "20250311001085",
+            "corp_code": "00126380",
+            "stock_knd": "보통주",
+            "nm": "삼성물산",
+            "relate": "계열회사",
+            "trmend_posesn_stock_co": "298,818,100",
+            "trmend_posesn_stock_qota_rt": "5.01",
             "stlm_dt": "2024-12-31",
         },
         {
@@ -75,7 +87,7 @@ def test_aggregate_rows_are_captured_separately_from_edges():
     """`계` 행은 주주 엣지가 되면 안 되지만, 합산 사실로는 살아 있어야 한다."""
     edges = parse_major_shareholder(HYSLR)
     aggs = parse_holding_aggregates(HYSLR)
-    assert [e.source_name for e in edges] == ["삼성생명보험㈜"]
+    assert [e.source_name for e in edges] == ["삼성생명보험㈜", "삼성물산"]
     assert len(aggs) == 1  # 값이 '-' 인 기타 계 행은 제외
     assert aggs[0].stock_knd == "보통주"
     assert aggs[0].share_qty == 1_198_033_154
@@ -140,3 +152,50 @@ def test_large_divergence_is_a_conflict():
     assert checks[0].status is AggResult.CONFLICT
     assert checks[0].detail["pct_by_company"] == 20.07
     assert checks[0].detail["pct_by_holder"] == 8.40
+
+
+def test_reporter_must_belong_to_the_group():
+    """대표보고자는 최대 지분권자가 아닐 수 있다.
+
+    실측: 삼성전자의 최대주주 본인은 삼성생명(8.51%)인데 대량보유 보고자는
+    삼성물산(5.01%)이다. 본인 이름으로만 짝지으면 이 정상 사례를 놓친다.
+    반대로 국민연금처럼 특별관계자가 아닌 보고자는 배제되어야 한다.
+    """
+    members = group_members(HYSLR)
+    assert "삼성물산" in {m for m in members}
+    outsider = {
+        "status": "000",
+        "list": [
+            {
+                "rcept_no": "20241007000111",
+                "rcept_dt": "2024-10-07",
+                "corp_code": "00126380",
+                "repror": "국민연금공단",
+                "stkqy": "400,000,000",
+                "stkrt": "6.70",
+            }
+        ],
+    }
+    checks = cross_check_aggregate(
+        parse_holding_aggregates(HYSLR), parse_major_reports(outsider)
+    )
+    assert checks[0].status is AggResult.NO_REPORT
+
+
+def test_preferred_stock_aggregate_is_not_compared():
+    """「대량보유 상황보고」의 '주식등' 은 종류 통합이라 우선주 계행과 맞대면 안 된다."""
+    payload = {
+        "status": "000",
+        "list": [
+            {
+                "rcept_no": "r",
+                "corp_code": "00126380",
+                "stock_knd": "우선주",
+                "nm": "계",
+                "trmend_posesn_stock_co": "993,638",
+                "trmend_posesn_stock_qota_rt": "0.12",
+                "stlm_dt": "2024-12-31",
+            }
+        ],
+    }
+    assert parse_holding_aggregates(payload) == []
