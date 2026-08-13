@@ -131,7 +131,7 @@ def test_real_pair_agrees_within_reporting_lag():
     assert checks[0].counterpart.reporter == "삼성물산"
 
 
-def test_large_divergence_is_a_conflict():
+def test_large_divergence_needs_review():
     """시차 허용치를 넘는 어긋남은 잡아야 한다 — 안 그러면 검출기가 무의미하다."""
     bogus = {
         "status": "000",
@@ -149,7 +149,7 @@ def test_large_divergence_is_a_conflict():
     checks = cross_check_aggregate(
         parse_holding_aggregates(HYSLR), parse_major_reports(bogus)
     )
-    assert checks[0].status is AggResult.CONFLICT
+    assert checks[0].status is AggResult.NEEDS_REVIEW
     assert checks[0].detail["pct_by_company"] == 20.07
     assert checks[0].detail["pct_by_holder"] == 8.40
 
@@ -246,7 +246,7 @@ def test_gap_is_explained_by_the_missing_shareholder():
     checks = cross_check_aggregate(
         parse_holding_aggregates(hyslr), parse_major_reports(report)
     )
-    assert checks[0].status is AggResult.CONFLICT
+    assert checks[0].status is AggResult.NEEDS_REVIEW
     d = checks[0].detail
     assert d["gap_qty"] == 1_880_000
     assert ("재단법인 동진장학연구재단",) in d["gap_explained_by"]

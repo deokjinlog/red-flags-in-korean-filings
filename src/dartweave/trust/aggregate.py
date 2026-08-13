@@ -69,7 +69,7 @@ class MajorReport:
 
 class AggResult(Enum):
     CONFIRMED = "confirmed"
-    CONFLICT = "conflict"
+    NEEDS_REVIEW = "needs_review"
     NO_REPORT = "no_report"
 
 
@@ -198,6 +198,25 @@ def latest_report_before(
     return max(prior, key=lambda r: (r.rcept_dt, r.rcept_no))
 
 
+def _closest_mode(agg: AggregateHolding, rep: MajorReport) -> str:
+    """보고값이 개별분에 가까운가, 합계에 가까운가 — 집계 범위 추정."""
+    if rep.share_qty is None:
+        return "unknown"
+    own = next(
+        (q for nm, q in agg.member_holdings if normalize_name(nm) == normalize_name(rep.reporter)),
+        None,
+    )
+    d_total = abs(rep.share_qty - agg.share_qty) if agg.share_qty is not None else None
+    d_own = abs(rep.share_qty - own) if own is not None else None
+    if d_own is None and d_total is None:
+        return "unknown"
+    if d_own is None:
+        return "group_total"
+    if d_total is None or d_own < d_total:
+        return "reporter_only"
+    return "group_total"
+
+
 def cross_check_aggregate(
     aggregates: list[AggregateHolding],
     reports: list[MajorReport],
@@ -245,7 +264,14 @@ def cross_check_aggregate(
         if not agrees and agg.share_pct is not None and counterpart.share_pct is not None:
             agrees = abs(agg.share_pct - counterpart.share_pct) <= pct_tolerance
 
-        status = AggResult.CONFIRMED if agrees else AggResult.CONFLICT
+        # ⚠️ 어긋남을 위반으로 단정하지 않는다. 실측으로 확인된 이유:
+        # 「대량보유 상황보고」의 집계 범위가 케이스마다 다르다 — 어떤 보고는
+        # 본인 단독, 어떤 보고는 본인+특별관계자 합산이며, 그 특별관계자 범위도
+        # 「최대주주 현황」의 특수관계인(상법/공정거래법)과 근거 법령이 다르다.
+        #   나혁휘: 개별 1,213,049 / 보고 1,393,049 / 계 14,849,438 — 어느 쪽과도 불일치
+        #   이웅열: 개별 6,279,798 / 보고 7,081,539 / 계  6,583,039 — 계보다도 많음
+        # 따라서 이 축은 **판정이 아니라 단서**를 낸다. 사람이 봐야 한다.
+        status = AggResult.CONFIRMED if agrees else AggResult.NEEDS_REVIEW
         results.append(
             AggCheck(
                 agg,
@@ -266,6 +292,9 @@ def cross_check_aggregate(
                         if agg.share_qty is not None and counterpart.share_qty is not None
                         else None
                     ),
+                    # 보고값이 개별분/계 중 어느 쪽에 가까운지 = 집계 범위 추정.
+                    # 이게 있으면 사람이 "아 본인 단독 보고구나" 를 즉시 판단한다.
+                    "closest_to": _closest_mode(agg, counterpart),
                     "gap_explained_by": (
                         explain_gap(
                             agg.member_holdings,
