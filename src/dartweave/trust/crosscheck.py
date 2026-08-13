@@ -1,0 +1,87 @@
+"""정형 ↔ 정형 교차확인.
+
+A사 「최대주주 현황」 과 B사 「타법인 출자현황」 은 같은 사실을 반대편에서 신고한 것이다.
+둘이 어긋나면 **둘 다 법정 신고 항목이라 변명이 불가능하다** — 이게 1급 모순이다.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
+
+from dartweave.parse.relation import RelationEdge
+from dartweave.trust.scope import Verdict, compare_scope
+
+
+class CrossResult(Enum):
+    CONFIRMED = "confirmed"
+    CONFLICT = "conflict"
+    CHANGE = "change"
+    SINGLE = "single"
+
+
+@dataclass(frozen=True)
+class CrossCheck:
+    edge: RelationEdge
+    status: CrossResult
+    counterpart_rcept_no: str | None = None
+    detail: dict[str, Any] = field(default_factory=dict)
+
+
+def _pair_key(holder_code: str, target_code: str) -> tuple[str, str]:
+    return (holder_code, target_code)
+
+
+def cross_check_structured(
+    shareholder_edges: list[RelationEdge],
+    investment_edges: list[RelationEdge],
+    name_to_code: dict[str, str],
+    code_to_name: dict[str, str],
+) -> list[CrossCheck]:
+    """최대주주 현황(보유자=이름) ↔ 타법인 출자현황(피출자=이름) 을 맞댄다."""
+    # ⚠️ RISK(side-effect): 해소 안 된 이름은 ""가 되어 인덱스에서 조용히 빠진다.
+    # 덕분에 엉뚱한 회사와 오매칭되진 않지만, 그 엣지는 CONFLICT 가 아니라 SINGLE 로 보고된다 —
+    # 즉 "상대편 신고가 없다"와 "이름을 못 붙였다"가 결과에서 구분되지 않는다.
+    # 해소율(AC-10)이 낮은 상태에서 SINGLE 비율을 신뢰도 근거로 쓰면 안 된다.
+    # — by main(3-checklist: 실패가 정상 결과로 위장)
+    index: dict[tuple[str, str], RelationEdge] = {}
+    for inv in investment_edges:
+        holder = inv.source_corp_code or ""
+        target = name_to_code.get(inv.target_name or "", "")
+        if holder and target:
+            index[_pair_key(holder, target)] = inv
+
+    results: list[CrossCheck] = []
+    for sh in shareholder_edges:
+        holder = name_to_code.get(sh.source_name, "")
+        target = sh.target_corp_code or ""
+        counterpart = index.get(_pair_key(holder, target)) if holder else None
+
+        if counterpart is None:
+            results.append(CrossCheck(sh, CrossResult.SINGLE))
+            continue
+
+        verdict = compare_scope(sh, counterpart)
+        if verdict is Verdict.CHANGE:
+            status = CrossResult.CHANGE
+            detail: dict[str, Any] = {
+                "from_fiscal_year": counterpart.fiscal_year,
+                "to_fiscal_year": sh.fiscal_year,
+            }
+        elif verdict is Verdict.AGREE:
+            status = CrossResult.CONFIRMED
+            detail = {}
+        else:
+            status = CrossResult.CONFLICT
+            gap = None
+            if sh.share_pct is not None and counterpart.share_pct is not None:
+                gap = round(abs(sh.share_pct - counterpart.share_pct), 6)
+            detail = {
+                "reported_by_target": sh.share_pct,
+                "reported_by_holder": counterpart.share_pct,
+                "gap": gap,
+            }
+        results.append(
+            CrossCheck(sh, status, counterpart.rcept_no, detail)
+        )
+    return results
