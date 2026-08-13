@@ -117,7 +117,13 @@ def parse_major_holding(payload: dict[str, Any]) -> list[RelationEdge]:
                 fiscal_year=rcept_no[:4],
                 as_of=normalize_as_of(item.get("stlm_dt")),
                 source=Source.STRUCTURED,
-                share_pct=parse_ratio(item.get("stkqy_irds_rt")),
+                # 실측 필드: stkrt(보유비율) · stkqy(보유주식등의 수).
+                # 초안의 stkqy_irds_rt 는 존재하지 않는 키였다.
+                # ⚠️ 이 값은 보고자 본인+특별관계자 **합산**이라 개별 주주 행과 직접
+                #    비교하면 안 된다 (삼성물산 20.08% vs 최대주주현황 개별 5.01%).
+                #    합산끼리 맞대는 축은 trust/aggregate.py 소관.
+                share_pct=parse_ratio(item.get("stkrt")),
+                share_qty=parse_qty(item.get("stkqy")),
                 reporter_corp_code=target,
             )
         )

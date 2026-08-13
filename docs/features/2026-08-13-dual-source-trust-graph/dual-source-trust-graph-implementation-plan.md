@@ -1568,7 +1568,8 @@ HOLDING = {
         {
             "corp_code": "00164779",
             "repror": "국민연금공단",
-            "stkqy_irds_rt": "7.12",
+            "stkrt": "7.12",
+            "stkqy": "51,830,000",
             "rcept_no": "20260201000777",
             "stlm_dt": "2026-01-31",
         }
@@ -1696,7 +1697,8 @@ def parse_major_holding(payload: dict[str, Any]) -> list[RelationEdge]:
                 fiscal_year=rcept_no[:4],
                 as_of=normalize_as_of(item.get("stlm_dt")),
                 source=Source.STRUCTURED,
-                share_pct=parse_ratio(item.get("stkqy_irds_rt")),
+                share_pct=parse_ratio(item.get("stkrt")),
+                share_qty=parse_qty(item.get("stkqy")),
                 reporter_corp_code=target,
             )
         )
@@ -1811,7 +1813,8 @@ def parse_major_holding(payload: dict[str, Any]) -> list[RelationEdge]:
                 fiscal_year=rcept_no[:4],
                 as_of=normalize_as_of(item.get("stlm_dt")),
                 source=Source.STRUCTURED,
-                share_pct=parse_ratio(item.get("stkqy_irds_rt")),
+                share_pct=parse_ratio(item.get("stkrt")),
+                share_qty=parse_qty(item.get("stkqy")),
                 reporter_corp_code=target,
             )
         )
@@ -1837,7 +1840,8 @@ def parse_major_holding(payload: dict[str, Any]) -> list[RelationEdge]:
                 fiscal_year=rcept_no[:4],
                 as_of=normalize_as_of(item.get("stlm_dt")),
                 source=Source.STRUCTURED,
-                share_pct=parse_ratio(item.get("stkqy_irds_rt")),
+                share_pct=parse_ratio(item.get("stkrt")),
+                share_qty=parse_qty(item.get("stkqy")),
                 reporter_corp_code=target,
             )
         )
