@@ -17,6 +17,17 @@ def parse_ratio(raw: Any) -> float | None:
         return None
 
 
+def parse_qty(raw: Any) -> int | None:
+    """'298,818,100' 같은 주식수. 지분율과 달리 분모가 없어 신고서 간 직접 비교가 된다."""
+    text = str(raw or "").strip().replace(",", "")
+    if not text or text == "-":
+        return None
+    try:
+        return int(float(text))
+    except ValueError:
+        return None
+
+
 def normalize_as_of(raw: Any) -> str | None:
     text = str(raw or "").strip().replace("-", "").replace(".", "")
     return text if len(text) == 8 and text.isdigit() else None
@@ -40,6 +51,8 @@ def parse_major_shareholder(payload: dict[str, Any]) -> list[RelationEdge]:
                 source=Source.STRUCTURED,
                 share_pct=parse_ratio(item.get("trmend_posesn_stock_qota_rt")),
                 reporter_corp_code=target,
+                stock_knd=str(item.get("stock_knd", "")).strip() or None,
+                share_qty=parse_qty(item.get("trmend_posesn_stock_co")),
             )
         )
     return edges
@@ -62,7 +75,10 @@ def parse_investment(payload: dict[str, Any]) -> list[RelationEdge]:
                 fiscal_year=rcept_no[:4],
                 as_of=normalize_as_of(item.get("stlm_dt")),
                 source=Source.STRUCTURED,
-                share_pct=parse_ratio(item.get("trmend_qota_rt")),
+                # 실데이터 확인: 응답 필드는 trmend_blce_qota_rt (기말잔액 지분율).
+                # trmend_qota_rt 는 존재하지 않아 전건 None 이 되고 교차확인이 무력화됐다.
+                share_pct=parse_ratio(item.get("trmend_blce_qota_rt")),
+                share_qty=parse_qty(item.get("trmend_blce_qy")),
                 reporter_corp_code=holder,
             )
         )

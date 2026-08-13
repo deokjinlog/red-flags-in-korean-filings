@@ -1555,7 +1555,7 @@ INVEST = {
         {
             "corp_code": "00126380",
             "inv_prm": "삼성디스플레이",
-            "trmend_qota_rt": "84.8",
+            "trmend_blce_qota_rt": "84.8",
             "rcept_no": "20260311000123",
             "stlm_dt": "2025-12-31",
         }
@@ -1672,7 +1672,7 @@ def parse_investment(payload: dict[str, Any]) -> list[RelationEdge]:
                 fiscal_year=rcept_no[:4],
                 as_of=normalize_as_of(item.get("stlm_dt")),
                 source=Source.STRUCTURED,
-                share_pct=parse_ratio(item.get("trmend_qota_rt")),
+                share_pct=parse_ratio(item.get("trmend_blce_qota_rt")),
                 reporter_corp_code=holder,
             )
         )

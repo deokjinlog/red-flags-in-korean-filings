@@ -1,0 +1,222 @@
+"""실데이터가 드러낸 결함의 회귀 테스트.
+
+2026-08-13 실 API 1회전에서 발견. 계약 fixture 만으로는 안 잡혔던 것들 —
+fixture 를 계획서의 가정대로 만들었기 때문에 가정이 틀린 걸 알 수 없었다.
+아래 payload 는 실제 응답에서 가져온 필드 구성이다.
+"""
+from dartweave.parse.relation import EdgeType, RelationEdge, Source
+from dartweave.parse.structured_rel import parse_investment, parse_major_shareholder
+from dartweave.trust.contradiction import detect_grade_a
+from dartweave.trust.scope import Verdict, compare_scope, scope_key
+
+# --- D1: 타법인 출자현황 지분율 필드 ---------------------------------------
+
+REAL_INVESTMENT = {
+    "status": "000",
+    "list": [
+        {
+            "rcept_no": "20250311001085",
+            "corp_code": "00126380",
+            "inv_prm": "삼성전기㈜",
+            "bsis_blce_qota_rt": "23.7",
+            "trmend_blce_qy": "17,693,000",
+            "trmend_blce_qota_rt": "23.7",
+            "stlm_dt": "2024-12-31",
+        }
+    ],
+}
+
+
+def test_investment_share_pct_uses_real_response_field():
+    """계획서는 trmend_qota_rt 를 가정했으나 실제 응답에 그 키는 없다.
+
+    잘못된 필드를 읽으면 전건 None 이 되어 교차확인·모순검출이 통째로 무력화된다
+    (실측: 삼성전자 138건 중 0건, SK하이닉스 49건 중 0건 파싱).
+    """
+    edge = parse_investment(REAL_INVESTMENT)[0]
+    assert edge.share_pct == 23.7
+    assert "trmend_qota_rt" not in REAL_INVESTMENT["list"][0]
+
+
+# --- D2: 주식 종류 혼합 -----------------------------------------------------
+
+REAL_SHAREHOLDER = {
+    "status": "000",
+    "list": [
+        {
+            "rcept_no": "20250311001085",
+            "corp_code": "00164779",
+            "stock_knd": "보통주",
+            "nm": "SK㈜",
+            "trmend_posesn_stock_qota_rt": "60.0",
+            "stlm_dt": "2024-12-31",
+        },
+        {
+            "rcept_no": "20250311001085",
+            "corp_code": "00164779",
+            "stock_knd": "의결권 있는 주식",
+            "nm": "SK㈜",
+            "trmend_posesn_stock_qota_rt": "60.0",
+            "stlm_dt": "2024-12-31",
+        },
+    ],
+}
+
+
+def test_stock_knd_is_captured():
+    edges = parse_major_shareholder(REAL_SHAREHOLDER)
+    assert [e.stock_knd for e in edges] == ["보통주", "의결권 있는 주식"]
+
+
+def test_duplicate_share_class_labels_do_not_fabricate_a_violation():
+    """실측: SK하이닉스는 같은 지분을 '보통주'/'의결권 있는 주식' 으로 중복 게시한다.
+
+    종류를 섞어 합산하면 60%+60%=120% 로 가짜 1급 모순이 만들어진다.
+    종류별로 나눠 세면 각각 60% 라 위반이 아니다.
+    """
+    edges = parse_major_shareholder(REAL_SHAREHOLDER)
+    assert detect_grade_a(edges) == []
+
+
+def test_real_violation_within_one_share_class_is_still_caught():
+    """종류별 분리가 진짜 위반까지 놓치면 안 된다."""
+    payload = {
+        "status": "000",
+        "list": [
+            {
+                "rcept_no": "20250311001085",
+                "corp_code": "00999999",
+                "stock_knd": "보통주",
+                "nm": f"주주{i}",
+                "trmend_posesn_stock_qota_rt": "40.0",
+                "stlm_dt": "2024-12-31",
+            }
+            for i in range(3)
+        ],
+    }
+    findings = detect_grade_a(parse_major_shareholder(payload))
+    assert len(findings) == 1
+    assert findings[0].detail["total"] == 120.0
+    assert findings[0].detail["stock_knd"] == "보통주"
+
+
+# --- D3: fiscal_year 는 사업연도가 아니라 접수연도 ---------------------------
+
+
+def _edge(rcept_no: str, as_of: str | None, pct: float) -> RelationEdge:
+    return RelationEdge(
+        edge_type=EdgeType.MAJOR_SHAREHOLDER_OF,
+        source_name="A",
+        source_corp_code=None,
+        target_name=None,
+        target_corp_code="B",
+        rcept_no=rcept_no,
+        fiscal_year=rcept_no[:4],
+        as_of=as_of,
+        source=Source.STRUCTURED,
+        share_pct=pct,
+    )
+
+
+def test_scope_key_ignores_receipt_year_when_as_of_present():
+    """실측: FY2024 사업보고서의 rcept_no 는 2025 로 시작한다 (접수연도).
+
+    같은 기준일의 정정공시가 이듬해 접수되면, 접수연도를 스코프 키에 섞을 경우
+    다른 버킷으로 갈라져 진짜 불일치가 CHANGE 로 오분류된다.
+    """
+    original = _edge("20250311001085", "20241231", 30.0)
+    amended = _edge("20260105000001", "20241231", 25.0)
+    assert scope_key(original) == scope_key(amended)
+    assert compare_scope(original, amended) is Verdict.MISMATCH
+
+
+def test_genuine_period_difference_is_still_change():
+    a = _edge("20250311001085", "20241231", 30.0)
+    b = _edge("20240311001085", "20231231", 25.0)
+    assert compare_scope(a, b) is Verdict.CHANGE
+
+
+def test_missing_as_of_still_falls_back_to_receipt_year():
+    a = _edge("20250311001085", None, 30.0)
+    b = _edge("20250315000009", None, 25.0)
+    assert compare_scope(a, b) is Verdict.MISMATCH
+
+
+# --- D5: 지분율 분모 불일치 (가장 위험했던 오탐) -----------------------------
+
+
+def _qty_edge(pct: float, qty: int | None) -> RelationEdge:
+    return RelationEdge(
+        edge_type=EdgeType.MAJOR_SHAREHOLDER_OF,
+        source_name="삼성물산㈜",
+        source_corp_code="00149655",
+        target_name=None,
+        target_corp_code="00126380",
+        rcept_no="20250311001085",
+        fiscal_year="2025",
+        as_of="20241231",
+        source=Source.STRUCTURED,
+        share_pct=pct,
+        share_qty=qty,
+    )
+
+
+def test_same_share_count_different_denominator_is_not_a_contradiction():
+    """실측: 삼성전자↔삼성물산은 같은 298,818,100주를 서로 다른 분모로 신고한다.
+
+    「최대주주 현황」은 주식종류별(보통주) 기준 5.01%,
+    「타법인 출자현황」은 총발행주식 기준 4.4%.
+    지분율만 비교하면 우선주를 발행한 거의 모든 기업에서 가짜 모순이 쏟아진다.
+    """
+    by_target = _qty_edge(5.01, 298_818_100)
+    by_holder = _qty_edge(4.4, 298_818_100)
+    assert compare_scope(by_target, by_holder) is Verdict.AGREE
+
+
+def test_genuinely_different_share_count_is_still_a_mismatch():
+    """분모 보정이 진짜 불일치까지 덮으면 안 된다."""
+    by_target = _qty_edge(5.01, 298_818_100)
+    by_holder = _qty_edge(5.01, 250_000_000)
+    assert compare_scope(by_target, by_holder) is Verdict.MISMATCH
+
+
+def test_falls_back_to_pct_when_share_count_missing():
+    a = _qty_edge(30.0, None)
+    b = _qty_edge(25.0, None)
+    assert compare_scope(a, b) is Verdict.MISMATCH
+
+
+def test_share_qty_is_parsed_from_both_filings():
+    sh = parse_major_shareholder(
+        {
+            "status": "000",
+            "list": [
+                {
+                    "rcept_no": "20250311001085",
+                    "corp_code": "00126380",
+                    "stock_knd": "보통주",
+                    "nm": "삼성물산㈜",
+                    "trmend_posesn_stock_co": "298,818,100",
+                    "trmend_posesn_stock_qota_rt": "5.01",
+                    "stlm_dt": "2024-12-31",
+                }
+            ],
+        }
+    )[0]
+    inv = parse_investment(
+        {
+            "status": "000",
+            "list": [
+                {
+                    "rcept_no": "20250814002350",
+                    "corp_code": "00149655",
+                    "inv_prm": "삼성전자",
+                    "trmend_blce_qy": "298,818,100",
+                    "trmend_blce_qota_rt": "4.4",
+                    "stlm_dt": "2024-12-31",
+                }
+            ],
+        }
+    )[0]
+    assert sh.share_qty == inv.share_qty == 298_818_100
+    assert sh.share_pct != inv.share_pct  # 분모가 달라 지분율은 어긋난다

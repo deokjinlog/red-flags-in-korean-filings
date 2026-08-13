@@ -76,10 +76,18 @@ def cross_check_structured(
             gap = None
             if sh.share_pct is not None and counterpart.share_pct is not None:
                 gap = round(abs(sh.share_pct - counterpart.share_pct), 6)
+            qty_gap = None
+            if sh.share_qty is not None and counterpart.share_qty is not None:
+                qty_gap = abs(sh.share_qty - counterpart.share_qty)
             detail = {
                 "reported_by_target": sh.share_pct,
                 "reported_by_holder": counterpart.share_pct,
                 "gap": gap,
+                # 주식수가 판정 근거다. 지분율 차이는 분모 차이일 수 있어
+                # 참고값으로만 남긴다 (실측: 5.01% vs 4.4% = 같은 298,818,100주).
+                "qty_by_target": sh.share_qty,
+                "qty_by_holder": counterpart.share_qty,
+                "qty_gap": qty_gap,
             }
         results.append(
             CrossCheck(sh, status, counterpart.rcept_no, detail)

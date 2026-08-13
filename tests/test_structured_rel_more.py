@@ -7,7 +7,9 @@ INVEST = {
         {
             "corp_code": "00126380",
             "inv_prm": "삼성디스플레이",
-            "trmend_qota_rt": "84.8",
+            # 실 API 응답 필드명 (2026-08-13 실측). 계획서 초안의 trmend_qota_rt 는
+            # 존재하지 않는 키였고, fixture 가 같은 오타를 공유해 통과하고 있었다.
+            "trmend_blce_qota_rt": "84.8",
             "rcept_no": "20260311000123",
             "stlm_dt": "2025-12-31",
         }
