@@ -199,3 +199,60 @@ def test_preferred_stock_aggregate_is_not_compared():
         ],
     }
     assert parse_holding_aggregates(payload) == []
+
+
+def test_gap_is_explained_by_the_missing_shareholder():
+    """실측(동진쎄미켐): 차액 1,880,000주 = 재단법인 동진장학연구재단 보유분.
+
+    「대량보유 상황보고」는 합계만 주고 구성원 명단을 안 준다. 따라서 "누가 한쪽에만
+    있는가" 는 차액 역산으로만 알 수 있고, 이 분해가 없으면 판정에 원문 추적이 필요하다.
+    """
+    hyslr = {
+        "status": "000",
+        "list": [
+            {
+                "rcept_no": "r", "corp_code": "00118804", "stock_knd": "보통주",
+                "nm": "동진홀딩스주식회사", "relate": "최대주주",
+                "trmend_posesn_stock_co": "16,706,986",
+                "trmend_posesn_stock_qota_rt": "32.49", "stlm_dt": "2024-12-31",
+            },
+            {
+                "rcept_no": "r", "corp_code": "00118804", "stock_knd": "보통주",
+                "nm": "재단법인 동진장학연구재단", "relate": "기타",
+                "trmend_posesn_stock_co": "1,880,000",
+                "trmend_posesn_stock_qota_rt": "3.66", "stlm_dt": "2024-12-31",
+            },
+            {
+                "rcept_no": "r", "corp_code": "00118804", "stock_knd": "보통주",
+                "nm": "명부산업(주)", "relate": "기타",
+                "trmend_posesn_stock_co": "633,678",
+                "trmend_posesn_stock_qota_rt": "1.23", "stlm_dt": "2024-12-31",
+            },
+            {
+                "rcept_no": "r", "corp_code": "00118804", "stock_knd": "보통주",
+                "nm": "계", "trmend_posesn_stock_co": "19,220,664",
+                "trmend_posesn_stock_qota_rt": "37.38", "stlm_dt": "2024-12-31",
+            },
+        ],
+    }
+    report = {
+        "status": "000",
+        "list": [{
+            "rcept_no": "m", "rcept_dt": "2024-12-06", "corp_code": "00118804",
+            "repror": "동진홀딩스주식회사",
+            "stkqy": "17,340,664", "stkrt": "33.72",
+        }],
+    }
+    checks = cross_check_aggregate(
+        parse_holding_aggregates(hyslr), parse_major_reports(report)
+    )
+    assert checks[0].status is AggResult.CONFLICT
+    d = checks[0].detail
+    assert d["gap_qty"] == 1_880_000
+    assert ("재단법인 동진장학연구재단",) in d["gap_explained_by"]
+
+
+def test_unexplained_gap_returns_empty_and_that_is_the_signal():
+    """설명이 안 되면 빈 목록. 억지로 조합을 만들어 설명한 척하면 안 된다."""
+    from dartweave.trust.aggregate import explain_gap
+    assert explain_gap((("A", 100), ("B", 200)), 7777) == []

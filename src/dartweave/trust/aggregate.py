@@ -51,6 +51,8 @@ class AggregateHolding:
     share_pct: float | None
     rcept_no: str
     members: frozenset[str] = frozenset()
+    # (이름, 주식수) — 차액을 어느 주주가 만들었는지 역산하는 데 쓴다.
+    member_holdings: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,50 @@ def group_members(payload: dict[str, Any]) -> frozenset[str]:
     )
 
 
+def member_holdings(payload: dict[str, Any], stock_knd: str = "보통주") -> tuple[tuple[str, int], ...]:
+    """개별 주주의 (이름, 주식수). 차액 역산용."""
+    out: list[tuple[str, int]] = []
+    for item in payload.get("list", []):
+        if is_aggregate_row(item):
+            continue
+        if str(item.get("stock_knd", "")).replace(" ", "") != stock_knd:
+            continue
+        nm = str(item.get("nm", "")).strip()
+        qty = parse_qty(item.get("trmend_posesn_stock_co"))
+        if nm and qty:
+            out.append((nm, qty))
+    return tuple(out)
+
+
+def explain_gap(
+    holdings: tuple[tuple[str, int], ...], gap: int, *, tolerance: int = 0
+) -> list[tuple[str, ...]]:
+    """차액을 만든 주주 조합을 역산한다.
+
+    「대량보유 상황보고」는 **합계만** 주고 구성원 명단을 주지 않는다. 따라서
+    "누가 한쪽에만 있는가" 는 직접 비교가 불가능하고, 차액과 일치하는 부분집합으로
+    역산해야 한다. 실측(동진쎄미켐): 차액 1,880,000주 = 재단법인 동진장학연구재단 보유분.
+
+    단건·2건 조합까지만 본다. 그 이상은 조합 폭발이고, 설명력도 급격히 떨어진다
+    (여러 명을 임의로 묶으면 우연히 맞는 조합이 늘어나 설명이 아니라 억지가 된다).
+    설명이 안 되면 빈 목록을 돌려준다 — **그 자체가 "사람이 봐야 한다" 는 신호다.**
+    """
+    if gap <= 0:
+        return []
+    found: list[tuple[str, ...]] = []
+    for nm, qty in holdings:
+        if abs(qty - gap) <= tolerance:
+            found.append((nm,))
+    if found:
+        return found
+    n = len(holdings)
+    for i in range(n):
+        for j in range(i + 1, n):
+            if abs(holdings[i][1] + holdings[j][1] - gap) <= tolerance:
+                found.append((holdings[i][0], holdings[j][0]))
+    return found
+
+
 def parse_holding_aggregates(payload: dict[str, Any]) -> list[AggregateHolding]:
     """`계` 행만 뽑는다. 개별 주주 행은 crosscheck 축이 가져간다.
 
@@ -95,6 +141,7 @@ def parse_holding_aggregates(payload: dict[str, Any]) -> list[AggregateHolding]:
     통합 집계라, 우선주 계 행과 맞대면 자릿수가 다른 비교가 되어 전건 오탐이 된다.
     """
     members = group_members(payload)
+    holdings = member_holdings(payload)
     out: list[AggregateHolding] = []
     for item in payload.get("list", []):
         if not is_aggregate_row(item):
@@ -114,6 +161,7 @@ def parse_holding_aggregates(payload: dict[str, Any]) -> list[AggregateHolding]:
                 share_pct=pct,
                 rcept_no=str(item.get("rcept_no", "")).strip(),
                 members=members,
+                member_holdings=holdings,
             )
         )
     return out
@@ -211,6 +259,21 @@ def cross_check_aggregate(
                     "as_of": agg.as_of,
                     "report_dt": counterpart.rcept_dt,
                     "reporter": counterpart.reporter,
+                    # 실증 도출: 차이의 출처를 함께 내놔야 판정이 5초에 끝난다.
+                    # 못 찾으면 빈 목록 — 그게 "사람이 봐야 한다" 는 신호다.
+                    "gap_qty": (
+                        abs(agg.share_qty - counterpart.share_qty)
+                        if agg.share_qty is not None and counterpart.share_qty is not None
+                        else None
+                    ),
+                    "gap_explained_by": (
+                        explain_gap(
+                            agg.member_holdings,
+                            agg.share_qty - counterpart.share_qty,
+                        )
+                        if agg.share_qty is not None and counterpart.share_qty is not None
+                        else []
+                    ),
                 },
             )
         )
