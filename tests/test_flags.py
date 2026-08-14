@@ -152,3 +152,39 @@ def test_every_flag_carries_evidence():
                    group_of={"a": "가그룹", "b": "나그룹"})
     assert len(flags) >= 3
     assert all(f.evidence for f in flags)
+
+
+# --- 공정위 공시(J)에서 오는 신호 ---------------------------------------------
+
+from dartweave.screen.flags import internal_trade, related_party_funding  # noqa: E402
+
+FUNDING = [("20240115", "특수관계인으로부터자금차입"),
+           ("20240220", "특수관계인에대한자금대여")]
+TRADE = [(f"2024{m:02d}01", "동일인등출자계열회사와의상품ㆍ용역거래") for m in (1, 2, 3)]
+
+
+def test_related_party_funding_is_flagged_with_dates():
+    f = related_party_funding(FUNDING)
+    assert f and f.kind == "특수관계인 자금거래"
+    assert "20240220 특수관계인에대한자금대여" in f.evidence
+
+
+def test_unrelated_reports_do_not_fire():
+    assert related_party_funding([("20240101", "임원의변동")]) is None
+
+
+def test_internal_trade_needs_more_than_one():
+    """한두 건은 정상 영업이다 — 임계를 안 두면 거의 모든 계열사가 걸린다."""
+    assert internal_trade(TRADE[:2]) is None
+    assert internal_trade(TRADE) is not None
+
+
+def test_internal_trade_threshold_is_visible_in_the_summary():
+    """임의값은 숨기지 않는다 — 임계를 보여야 사람이 다시 판단할 수 있다."""
+    f = internal_trade(TRADE)
+    assert "임계 3건" in f.summary
+
+
+def test_evidence_is_newest_first():
+    f = internal_trade(TRADE)
+    assert f.evidence[0].startswith("20240301")

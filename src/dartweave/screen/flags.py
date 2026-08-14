@@ -249,3 +249,45 @@ def screen(
         crosses_group_boundary(edges, corp_code, group_of or {}, name=name),
     ]
     return [f for f in found if f is not None]
+
+
+# 공정위 공시(pblntf_ty=J)에서 오는 신호. 본문을 안 읽어도 **공시 종류와 건수**만으로
+# 의미가 있다 — "이 회사는 작년에 특수관계인 자금차입을 6번 공시했다" 는 그 자체로
+# 사실이고 반박하려면 그 공시를 반박해야 한다.
+FUNDING_KEYWORDS = ("자금차입", "자금대여", "자금거래", "채무보증", "담보제공")
+TRADE_KEYWORDS = ("상품ㆍ용역거래", "상품·용역거래", "내부거래")
+
+
+def related_party_funding(
+    reports: list[tuple[str, str]], *, min_count: int = 1
+) -> Flag | None:
+    """특수관계인과의 자금거래 — 차입·대여·보증·담보.
+
+    `reports` 는 `(공시일, 보고서명)` 목록. 지분 관계가 정상으로 보여도 자금이
+    특수관계인 쪽으로 오가면 얘기가 다르다. 실측(2024 1분기 표본 300건):
+    특수관계인 자금차입 25건 · 자금대여 8건.
+    """
+    hits = [(d, n) for d, n in reports if any(k in n for k in FUNDING_KEYWORDS)]
+    if len(hits) < min_count:
+        return None
+    return Flag(
+        kind="특수관계인 자금거래",
+        summary=f"자금 차입·대여·보증 공시 {len(hits)}건",
+        evidence=[f"{d} {n}" for d, n in sorted(hits, reverse=True)[:5]],
+    )
+
+
+def internal_trade(reports: list[tuple[str, str]], *, min_count: int = 3) -> Flag | None:
+    """계열사 간 상품·용역거래.
+
+    한두 건은 정상 영업이라 `min_count` 를 3으로 둔다 — **임의값이고**, 업종에 따라
+    적정선이 다르다. 건수를 근거에 실어 사람이 다시 판단하게 한다.
+    """
+    hits = [(d, n) for d, n in reports if any(k in n for k in TRADE_KEYWORDS)]
+    if len(hits) < min_count:
+        return None
+    return Flag(
+        kind="계열사 내부거래",
+        summary=f"상품·용역거래 공시 {len(hits)}건 (임계 {min_count}건)",
+        evidence=[f"{d} {n}" for d, n in sorted(hits, reverse=True)[:5]],
+    )

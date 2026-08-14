@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -22,7 +23,8 @@ from dartweave.dart.status import Action, classify
 from dartweave.parse.structured_rel import parse_investment, parse_major_shareholder
 from dartweave.resolve.aliases import load_aliases
 from dartweave.resolve.resolver import Resolver
-from dartweave.screen.flags import screen
+from dartweave.screen.flags import internal_trade, related_party_funding, screen
+from dartweave.structure.interpret import allowed_tokens, build_prompt
 from dartweave.structure.project import project
 
 # 공식 기업집단 라벨. **지금은 손으로 넣은 표본이다** — 제대로 하려면 공정거래위원회
@@ -107,12 +109,39 @@ def fetch_shares(
     return out
 
 
+def fetch_fairtrade(corp_code: str, year: str) -> list[tuple[str, str]]:
+    """공정거래위원회 공시(pblntf_ty=J) 목록.
+
+    본문을 안 읽어도 **공시 종류와 건수**만으로 사실이다 — "작년에 특수관계인
+    자금차입을 6번 공시했다" 는 반박하려면 그 공시를 반박해야 한다.
+    """
+    settings = Settings.from_env()
+    if not settings.dart_api_key:
+        return []
+    out: list[tuple[str, str]] = []
+    client = DartClient(api_key=settings.dart_api_key)
+    try:
+        payload = client.get_json("list.json", {
+            "corp_code": corp_code, "bgn_de": f"{year}0101", "end_de": f"{year}1231",
+            "pblntf_ty": "J", "page_count": "100",
+        })
+        if classify(str(payload.get("status", ""))) is Action.OK:
+            for it in (payload.get("list") or []):
+                out.append((re.sub(r"\D", "", str(it.get("rcept_dt", ""))),
+                            re.sub(r"\[.*?\]", "", it.get("report_nm", "")).strip()))
+    finally:
+        client.close()
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--name", required=True, help="종목명 (예: 케이씨씨)")
     p.add_argument("--graph", default="data/graph_closed.json")
     p.add_argument("--hops", type=int, default=2, help="공동 의존점 근접 판정 홉수")
     p.add_argument("--year", default="2024", help="지분율 조회 사업연도")
+    p.add_argument("--explain", action="store_true",
+                   help="걸린 항목을 문장으로 옮길 프롬프트와 허용 토큰을 함께 낸다")
     p.add_argument("--no-fetch", action="store_true",
                    help="지분율 조회를 건너뛴다 (근거에 '미상' 으로 표시됨)")
     args = p.parse_args(argv)
@@ -165,6 +194,12 @@ def main(argv: list[str] | None = None) -> int:
         share_of=shares,
     )
 
+    if not args.no_fetch:
+        reports = fetch_fairtrade(code, args.year)
+        print(f"  공정위 공시   {len(reports)}건 ({args.year})")
+        flags += [f for f in (related_party_funding(reports), internal_trade(reports))
+                  if f is not None]
+
     if not flags:
         print("\n걸린 항목 없음")
         print("  ※ '이상 없음' 이 아니라 '이 검사들에는 안 걸렸음' 이다.")
@@ -175,8 +210,20 @@ def main(argv: list[str] | None = None) -> int:
             for line in f.evidence:
                 print(f"      {line}")
 
-    print("\n검사 범위 — 지분 관계(최대주주·타법인출자)만. "
-          "재무·거래·담보는 아직 안 본다.")
+    if args.explain and flags:
+        payload = json.dumps(
+            {"company": args.name,
+             "flags": [{"kind": f.kind, "summary": f.summary, "evidence": f.evidence}
+                       for f in flags]},
+            ensure_ascii=False,
+        )
+        print("\n--- 해석 프롬프트 (모델에 넣을 입력) ---")
+        print(build_prompt(payload))
+        print(f"--- 허용 토큰 {len(allowed_tokens(payload))}개 ---")
+        print("모델 출력은 interpret() 를 거쳐야 한다 — 이 토큰 밖의 숫자나 "
+              "기업명이 나오면 HallucinationDetected 로 중단된다.")
+
+    print("\n검사 범위 — 지분 관계 + 공정위 공시. 재무제표는 아직 안 본다.")
     print("이 도구는 매수·매도를 말하지 않는다. 걸린 것과 그 근거만 낸다.\n")
     return 0
 
