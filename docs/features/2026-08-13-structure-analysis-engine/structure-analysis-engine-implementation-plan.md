@@ -1661,7 +1661,9 @@ from dartweave.structure.interpret import (
     interpret,
 )
 
-NUMBERS = {"26.1", "11", "287"}
+# 군집 번호도 숫자다. 실제로는 allowed_tokens 가 payload 의 `"id":0` 에서 뽑아주지만,
+# 픽스처를 손으로 쓸 때는 빠뜨리기 쉽다 — 빠뜨리면 정상 문장이 '지어낸 숫자' 로 걸린다.
+NUMBERS = {"26.1", "11", "287", "0"}
 KNOWN = frozenset({"삼성전자", "태영건설", "건설공제조합", "현대자동차"})
 
 
@@ -1703,6 +1705,24 @@ def test_company_name_present_in_the_input_is_allowed():
     """입력에 있던 회사는 당연히 언급해도 된다 — 검사 대상은 '지어낸 것' 뿐이다."""
     ok, extra = check_output("태영건설이 병목이다.", NUMBERS | {"태영건설"}, KNOWN)
     assert ok, extra
+
+
+def test_parent_name_nested_in_an_allowed_subsidiary_is_not_flagged():
+    """한국 기업명은 접두 중첩이 흔하다 — 포스코/포스코케미칼, 한화/한화솔루션.
+
+    입력에 자회사만 있는데 부모 이름이 그 안에 포함돼 있다고 '지어냈다' 고
+    걸면, 정상 문장이 반려된다. 실측으로 재현된 오탐이다.
+    """
+    known = frozenset({"포스코", "포스코케미칼"})
+    ok, extra = check_output("포스코케미칼이 병목이다.", {"포스코케미칼"}, known)
+    assert ok, extra
+
+
+def test_parent_mentioned_on_its_own_is_still_flagged():
+    """구제는 자회사 이름에 가려진 경우만. 부모를 따로 끌어오면 여전히 환각이다."""
+    known = frozenset({"포스코", "포스코케미칼"})
+    ok, extra = check_output("포스코가 병목이다.", {"포스코케미칼"}, known)
+    assert not ok and "포스코" in extra
 
 
 def test_allowed_tokens_extracts_numbers_and_names_from_payload():
@@ -1758,6 +1778,11 @@ LLM 은 이미 나온 표만 본다. 그리고 출력이 입력 토큰 집합을
 불용어 목록을 늘리는 건 끝이 없다. 대신 **우리가 이미 가진 corpCode 실명 목록**과
 대조한다: 사전에 있는 회사 이름이 출력에 있는데 입력에 없었다면, 그건 지어낸 것이다.
 일반 산문 낱말은 사전에 없으므로 오탐이 나지 않는다(실측 확인).
+
+**이 검사가 보장하는 범위를 정확히 말하면**: "실재하는 회사인데 입력에 없던 것" 을
+잡는다. 사전에 아예 없는 완전 허구의 이름은 못 잡는다. 그래도 이게 유효한 이유는
+현실적인 실패 모드가 **모델이 학습에서 기억한 진짜 회사를 끌어오는 것**이기 때문이다.
+없는 회사를 창작하는 쪽은 프롬프트 금지로 막고, 남는 위험은 여기 적어 둔다.
 """
 from __future__ import annotations
 
@@ -1817,8 +1842,14 @@ def check_output(
         if m not in allowed and m.rstrip("0").rstrip(".") not in allowed:
             extra.append(m)
     for name in known_entities:
-        if len(name) >= MIN_ENTITY_LEN and name in text and name not in allowed:
-            extra.append(name)
+        if len(name) < MIN_ENTITY_LEN or name not in text or name in allowed:
+            continue
+        # 접두 중첩 구제: 허용된 더 긴 이름이 본문에 있고 그 안에 이 이름이
+        # 들어 있으면, 부모 회사가 '등장한' 게 아니라 자회사 이름의 일부일 뿐이다.
+        # 실측 오탐: 입력에 포스코케미칼만 있는데 '포스코' 가 지어낸 이름으로 걸렸다.
+        if any(len(a) > len(name) and name in a and a in text for a in allowed):
+            continue
+        extra.append(name)
     return (not extra), extra
 
 
@@ -1849,7 +1880,7 @@ def interpret(
 - [ ] **Step 4: 통과 확인**
 
 Run: `uv run pytest tests/structure/test_interpret.py -v`
-Expected: PASS — 9 passed
+Expected: PASS — 11 passed
 
 - [ ] **Step 5: 커밋**
 
