@@ -1065,7 +1065,13 @@ git commit -m "feat(structure): 군집별 지표표 (의존도 정의 단일화,
 ```python
 import igraph as ig
 
-from dartweave.structure.sensitivity import RESOLUTIONS, SweepResult, resolution_sweep
+from dartweave.structure.sensitivity import (
+    DEFAULT_MAX_RATIO,
+    RESOLUTIONS,
+    SweepPoint,
+    SweepResult,
+    resolution_sweep,
+)
 
 
 def _two_blobs() -> ig.Graph:
@@ -1093,14 +1099,43 @@ def test_stable_structure_holds_across_the_sweep():
 
 
 def test_wildly_varying_cluster_count_does_not_hold():
-    """실측: 해상도 0.5→2.0 에서 최대군집 126→69. 이런 결론은 반려돼야 한다.
-
-    합성 확인: 무구조 그래프의 최대군집 비중이 0.787→0.087 (spread 0.7) 로 무너진다.
-    """
+    """무구조 그래프는 해상도에 따라 최대군집 비중이 0.787→0.087 로 무너진다."""
     ig.set_random_number_generator(__import__("random").Random(1))
-    r = resolution_sweep(ig.Graph.Erdos_Renyi(n=80, m=240), tolerance=0.05)
+    r = resolution_sweep(ig.Graph.Erdos_Renyi(n=80, m=240))
     assert r.holds is False
-    assert r.spread > 0.5
+    assert r.largest_ratio > 5
+
+
+def test_measured_halving_case_is_rejected():
+    """회귀 방지 — 게이트가 **자기 존재 이유인 사례**를 잡아야 한다.
+
+    실측: 1,490 노드에서 해상도 0.5→2.0 에 최대군집 126→69.
+    비중의 절대 차이로 재면 0.085-0.046 = 0.038 이라 어떤 임계도 통과한다.
+    배율로 재야 1.83배가 드러난다.
+    """
+    from dartweave.structure.sensitivity import stability_ratio
+
+    points = [
+        SweepPoint(resolution=0.5, n_clusters=38, largest_cluster=126,
+                   largest_share=126 / 1490, label="resolution=0.5"),
+        SweepPoint(resolution=2.0, n_clusters=61, largest_cluster=69,
+                   largest_share=69 / 1490, label="resolution=2.0"),
+    ]
+    ratio = stability_ratio(points)
+    assert 1.8 < ratio < 1.9
+    assert ratio > DEFAULT_MAX_RATIO  # 즉, holds=False
+
+
+def test_stable_case_stays_under_the_threshold():
+    """반대편도 고정 — 안 흔들리는 구조를 반려하면 게이트가 쓸모없어진다."""
+    from dartweave.structure.sensitivity import stability_ratio
+
+    points = [
+        SweepPoint(resolution=r, n_clusters=2, largest_cluster=6, largest_share=0.5,
+                   label=f"resolution={r}")
+        for r in (0.5, 2.0)
+    ]
+    assert stability_ratio(points) == 1.0
 
 
 def test_points_carry_cluster_count_and_largest():
@@ -1167,6 +1202,12 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'dartweave.structure.se
 실측: 해상도 0.5→2.0 에서 최대 군집이 126→69 로 반토막 났다. *"가장 큰 군집이 N개사"*
 류 결론은 이 구간을 못 버틴다. 특정 구간에서만 성립하는 결론은 파라미터를 잘 골라서
 나온 우연이므로 보고하지 않는다.
+
+**판정 지표를 비중 차이가 아니라 배율로 재는 이유.** 처음엔 최대군집 비중의 절대
+차이(spread)로 쟀는데, 그러면 위 실측 사례를 **못 잡는다** — 1,490 노드에서 126→69 는
+비중으로 0.085→0.046, 차이가 0.038 밖에 안 돼서 어떤 느슨한 임계도 통과한다.
+군집이 반토막 났는데 게이트가 조용한 것이다. 크기가 절반이 된 건 배율로 봐야
+드러난다(1.83배). 그래서 최대군집 비중의 **최대/최소 비율**로 판정한다.
 """
 from __future__ import annotations
 
@@ -1180,7 +1221,9 @@ from dartweave.structure.weight import EdgeEvidence, edge_weights
 from dartweave.trust.weight import Coefficients
 
 RESOLUTIONS: tuple[float, ...] = (0.5, 0.8, 1.0, 1.2, 1.5, 2.0)
-DEFAULT_TOLERANCE = 0.5  # 최대군집 비중의 허용 변동폭
+# 최대군집 크기의 허용 배율. 실측 접지 — 안정 구조는 1.00배(합성 확인), 실데이터의
+# 문제 사례는 1.83배, 무구조 그래프는 9.05배였다. 1.5 는 그 사이를 가른다.
+DEFAULT_MAX_RATIO = 1.5
 
 # AC-8 — 겹2 계수는 임의값이다. 결론이 그 임의값에 기대고 있으면 결론이 아니다.
 COEFFICIENT_CASES: tuple[tuple[str, Coefficients], ...] = (
@@ -1205,19 +1248,31 @@ class SweepPoint:
 class SweepResult:
     points: list[SweepPoint]
     holds: bool
-    spread: float
+    largest_ratio: float
+
+
+def stability_ratio(points: list[SweepPoint]) -> float:
+    """최대군집 비중의 최대/최소 배율. 1.0 이면 스윕 내내 꿈쩍 안 했다는 뜻.
+
+    비중의 절대 차이를 쓰면 안 된다 — 큰 그래프에서는 군집이 반토막 나도 차이가
+    0.04 수준이라 어떤 임계도 통과한다(실측).
+    """
+    shares = [p.largest_share for p in points if p.largest_share > 0]
+    if not shares:
+        return 1.0
+    return max(shares) / min(shares)
 
 
 def resolution_sweep(
     g: ig.Graph,
     *,
     resolutions: tuple[float, ...] = RESOLUTIONS,
-    tolerance: float = DEFAULT_TOLERANCE,
+    max_ratio: float = DEFAULT_MAX_RATIO,
 ) -> SweepResult:
     points: list[SweepPoint] = []
     for res in resolutions:
         points.append(_point(g, resolution=res, label=f"resolution={res}"))
-    return _summarize(points, tolerance)
+    return _summarize(points, max_ratio)
 
 
 def coefficient_sweep(
@@ -1225,7 +1280,7 @@ def coefficient_sweep(
     evidence: list[EdgeEvidence],
     *,
     resolution: float = 1.0,
-    tolerance: float = DEFAULT_TOLERANCE,
+    max_ratio: float = DEFAULT_MAX_RATIO,
     cases: tuple[tuple[str, Coefficients], ...] = COEFFICIENT_CASES,
 ) -> SweepResult:
     """겹2 계수를 흔들어도 결론이 버티는가 (AC-8).
@@ -1238,7 +1293,7 @@ def coefficient_sweep(
     for label, coef in cases:
         g = project(edges, undirected=True, weights=edge_weights(evidence, coef))
         points.append(_point(g, resolution=resolution, label=label))
-    return _summarize(points, tolerance)
+    return _summarize(points, max_ratio)
 
 
 def _point(ig_graph: ig.Graph, *, resolution: float, label: str) -> SweepPoint:
@@ -1256,10 +1311,9 @@ def _point(ig_graph: ig.Graph, *, resolution: float, label: str) -> SweepPoint:
     )
 
 
-def _summarize(points: list[SweepPoint], tolerance: float) -> SweepResult:
-    shares = [p.largest_share for p in points]
-    spread = max(shares) - min(shares) if shares else 0.0
-    return SweepResult(points=points, holds=spread <= tolerance, spread=spread)
+def _summarize(points: list[SweepPoint], max_ratio: float) -> SweepResult:
+    ratio = stability_ratio(points)
+    return SweepResult(points=points, holds=ratio <= max_ratio, largest_ratio=ratio)
 ```
 
 - [ ] **Step 4: 통과 확인**
@@ -1427,16 +1481,17 @@ def _block() -> EvidenceBlock:
         null_mean=0.7230,
         null_sd=0.0007,
         null_runs=20,
+        null_swaps_failed=0,
         cpm_clusters=52,
         cpm_delta=14,
         sweep_holds=True,
-        sweep_spread=0.08,
+        sweep_ratio=1.12,
         coef_sweep_holds=True,
-        coef_sweep_spread=0.03,
+        coef_sweep_ratio=1.04,
         corporate_resolution_rate=0.60,
         scope=Scope(industry="건설", companies=1490, disclosures=2984,
                     fiscal_year="2024", boundary_ratio=0.0),
-        thresholds=Thresholds(0.8, 0.0, 0.05, 3.0, 0.5),
+        thresholds=Thresholds(0.8, 0.0, 0.05, 3.0, 1.5),
         verdict=Verdict.ACCEPTED,
     )
 
@@ -1460,7 +1515,7 @@ def test_both_sweeps_are_reported():
     """AC-7(해상도) 과 AC-8(겹2 계수) 은 별개 축이라 따로 나와야 한다."""
     s = json.loads(to_json(_block()))["verification"]["stability"]
     assert set(s) == {"resolution", "coefficients"}
-    assert s["coefficients"]["spread"] == 0.03
+    assert s["coefficients"]["largest_ratio"] == 1.04
 
 
 def test_verification_carries_null_model_not_just_modularity():
@@ -1469,6 +1524,16 @@ def test_verification_carries_null_model_not_just_modularity():
     v = d["verification"]["structure"]
     assert v["null_mean"] == 0.7230 and v["runs"] == 20
     assert v["effect_size"] == round(0.8535 - 0.7230, 6)
+
+
+def test_failed_shuffles_are_visible():
+    """셔플이 실패하면 귀무모형이 실제값 쪽으로 끌려가 효과크기가 작게 나온다.
+
+    보수적인 방향이라 거짓 채택은 안 생기지만, 그 사실이 숫자만 봐선 안 보인다.
+    그래서 반복수와 함께 실패 횟수도 싣는다.
+    """
+    v = json.loads(to_json(_block()))["verification"]["structure"]
+    assert v["swaps_failed"] == 0
 
 
 def test_cpm_delta_is_exposed():
@@ -1531,7 +1596,7 @@ class Thresholds:
     max_boundary_ratio: float
     min_effect_size: float
     min_z: float
-    sweep_tolerance: float
+    sweep_max_ratio: float
 
 
 @dataclass(frozen=True)
@@ -1545,12 +1610,13 @@ class EvidenceBlock:
     null_mean: float
     null_sd: float
     null_runs: int
+    null_swaps_failed: int
     cpm_clusters: int
     cpm_delta: int
     sweep_holds: bool
-    sweep_spread: float
+    sweep_ratio: float
     coef_sweep_holds: bool
-    coef_sweep_spread: float
+    coef_sweep_ratio: float
     corporate_resolution_rate: float
     scope: Scope
     thresholds: Thresholds
@@ -1587,6 +1653,9 @@ def to_json(block: EvidenceBlock) -> str:
                     "null_mean": block.null_mean,
                     "null_sd": block.null_sd,
                     "runs": block.null_runs,
+                    # 셔플이 실패한 회차. >0 이면 귀무모형이 덜 섞였다는 뜻이라
+                    # 효과크기가 실제보다 작게 나온다 — 숫자만 봐선 안 보이므로 싣는다.
+                    "swaps_failed": block.null_swaps_failed,
                     "effect_size": round(block.modularity - block.null_mean, 6),
                     "cpm_clusters": block.cpm_clusters,
                     "cpm_delta": block.cpm_delta,
@@ -1594,11 +1663,11 @@ def to_json(block: EvidenceBlock) -> str:
                 "stability": {
                     "resolution": {
                         "holds": block.sweep_holds,
-                        "spread": block.sweep_spread,
+                        "largest_ratio": block.sweep_ratio,
                     },
                     "coefficients": {
                         "holds": block.coef_sweep_holds,
-                        "spread": block.coef_sweep_spread,
+                        "largest_ratio": block.coef_sweep_ratio,
                     },
                 },
             },
@@ -1616,7 +1685,7 @@ def to_json(block: EvidenceBlock) -> str:
                 "max_boundary_ratio": block.thresholds.max_boundary_ratio,
                 "min_effect_size": block.thresholds.min_effect_size,
                 "min_z": block.thresholds.min_z,
-                "sweep_tolerance": block.thresholds.sweep_tolerance,
+                "sweep_max_ratio": block.thresholds.sweep_max_ratio,
             },
             "verdict": block.verdict.value,
         },
@@ -1628,7 +1697,7 @@ def to_json(block: EvidenceBlock) -> str:
 - [ ] **Step 4: 통과 확인**
 
 Run: `uv run pytest tests/structure/test_evidence.py -v`
-Expected: PASS — 7 passed
+Expected: PASS — 8 passed
 
 - [ ] **Step 5: 커밋**
 
@@ -2028,7 +2097,7 @@ from dartweave.structure.metrics import cluster_metrics
 from dartweave.structure.nullmodel import degree_preserving_null
 from dartweave.structure.project import boundary_of, project
 from dartweave.structure.sensitivity import (
-    DEFAULT_TOLERANCE,
+    DEFAULT_MAX_RATIO,
     coefficient_sweep,
     resolution_sweep,
 )
@@ -2050,7 +2119,7 @@ class AnalysisConfig:
     resolution: float = 1.0
     cpm_resolution: float = 0.005
     null_runs: int = 20
-    sweep_tolerance: float = DEFAULT_TOLERANCE
+    sweep_max_ratio: float = DEFAULT_MAX_RATIO
     fiscal_year: str = "2024"
     industry: str = "미지정"
 
@@ -2109,7 +2178,7 @@ def analyze(
 
     rows = cluster_metrics(kept, membership, depth=topo.depth)
     null = degree_preserving_null(und, runs=cfg.null_runs, seed=1)
-    sweep = resolution_sweep(und, tolerance=cfg.sweep_tolerance)
+    sweep = resolution_sweep(und, max_ratio=cfg.sweep_max_ratio)
     cmp_obj = compare_objectives(
         und, resolution=cfg.resolution, cpm_resolution=cfg.cpm_resolution
     )
@@ -2118,12 +2187,12 @@ def analyze(
     # "버텼다" 가 아니라 **검사하지 않았다** 로 두고 결론 판정에서 제외한다.
     if kept_ev is not None:
         coef = coefficient_sweep(
-            kept, kept_ev, resolution=cfg.resolution, tolerance=cfg.sweep_tolerance
+            kept, kept_ev, resolution=cfg.resolution, max_ratio=cfg.sweep_max_ratio
         )
-        coef_holds, coef_spread = coef.holds, coef.spread
+        coef_holds, coef_ratio = coef.holds, coef.largest_ratio
         stability_holds = sweep.holds and coef.holds
     else:
-        coef_holds, coef_spread = False, 0.0
+        coef_holds, coef_ratio = False, 1.0
         stability_holds = sweep.holds
 
     verdict = decide(
@@ -2143,12 +2212,13 @@ def analyze(
         null_mean=null.mean,
         null_sd=null.sd,
         null_runs=null.runs,
+        null_swaps_failed=null.swaps_failed,
         cpm_clusters=cmp_obj["cpm_clusters"],
         cpm_delta=cmp_obj["delta"],
         sweep_holds=sweep.holds,
-        sweep_spread=sweep.spread,
+        sweep_ratio=sweep.largest_ratio,
         coef_sweep_holds=coef_holds,
-        coef_sweep_spread=coef_spread,
+        coef_sweep_ratio=coef_ratio,
         corporate_resolution_rate=corporate_resolution_rate,
         scope=Scope(
             industry=cfg.industry,
@@ -2162,7 +2232,7 @@ def analyze(
             max_boundary_ratio=cfg.max_boundary_ratio,
             min_effect_size=MIN_EFFECT,
             min_z=MIN_Z,
-            sweep_tolerance=cfg.sweep_tolerance,
+            sweep_max_ratio=cfg.sweep_max_ratio,
         ),
         verdict=verdict,
     )
