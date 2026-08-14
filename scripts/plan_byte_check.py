@@ -76,23 +76,32 @@ def extract_blocks(plan_text: str) -> list[Block]:
     return blocks
 
 
-# 메인 에이전트가 사후에 붙이는 거버넌스 주석. `# ⚠️ RISK(` 로 시작해서
-# 다음 비-주석 줄 직전까지가 한 덩어리다 (`# — by main(...)` 꼬리 포함).
+# 메인 에이전트가 사후에 붙이는 거버넌스 주석. `# ⚠️ RISK(` 로 열고
+# `# — by main(...)` 으로 닫는다.
 _RISK_START = re.compile(r"^\s*#\s*⚠️\s*RISK\(")
+_RISK_END = re.compile(r"^\s*#\s*—\s*by main\(")
 
 
 def strip_risk_comments(text: str) -> str:
-    """RISK 주석 블록을 지운 사본. 계획서에는 없고 코드에만 있는 게 정상이다."""
+    """RISK 주석 블록을 지운 사본. 계획서에는 없고 코드에만 있는 게 정상이다.
+
+    끝을 `# — by main(` 으로 잡는 이유: "다음 비-주석 줄까지" 로 잡았더니 RISK
+    바로 뒤에 붙어 있던 **원래 주석까지 먹어치워** 멀쩡한 파일을 불일치로 신고했다.
+    종료 표지가 없으면 첫 비-주석 줄에서 멈춘다(안전망).
+    """
     out: list[str] = []
     skipping = False
     for line in text.splitlines():
-        if _RISK_START.match(line):
+        if not skipping and _RISK_START.match(line):
             skipping = True
             continue
         if skipping:
+            if _RISK_END.match(line):
+                skipping = False
+                continue
             if line.lstrip().startswith("#"):
                 continue
-            skipping = False
+            skipping = False  # 표지 없이 끝난 경우 — 이 줄은 살린다
         out.append(line)
     return ("\n".join(out) + "\n") if out else ""
 
