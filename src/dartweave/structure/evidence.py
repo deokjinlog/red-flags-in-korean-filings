@@ -61,6 +61,7 @@ class EvidenceBlock:
     coef_sweep_holds: bool
     coef_sweep_ratio: float
     corporate_resolution_rate: float
+    topology_computed: bool
     scope: Scope
     thresholds: Thresholds
     verdict: Verdict
@@ -130,6 +131,9 @@ def to_json(block: EvidenceBlock) -> str:
                 "min_z": block.thresholds.min_z,
                 "sweep_max_ratio": block.thresholds.sweep_max_ratio,
             },
+            # 경계가 열려 층위·중심성을 산출하지 않았으면 False. 이게 없으면
+            # `mean_supply_depth: null` 이 "깊이 0" 인지 "안 쟀다" 인지 구분되지 않는다.
+            "topology_computed": block.topology_computed,
             "verdict": block.verdict.value,
         },
         ensure_ascii=False,

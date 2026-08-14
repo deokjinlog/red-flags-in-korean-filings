@@ -24,6 +24,7 @@ def _block() -> EvidenceBlock:
         coef_sweep_holds=True,
         coef_sweep_ratio=1.04,
         corporate_resolution_rate=0.60,
+        topology_computed=True,
         scope=Scope(industry="건설", companies=1490, disclosures=2984,
                     fiscal_year="2024", boundary_ratio=0.0),
         thresholds=Thresholds(0.8, 0.0, 0.05, 3.0, 1.5),
@@ -59,6 +60,11 @@ def test_verification_carries_null_model_not_just_modularity():
     v = d["verification"]["structure"]
     assert v["null_mean"] == 0.7230 and v["runs"] == 20
     assert v["effect_size"] == round(0.8535 - 0.7230, 6)
+
+
+def test_topology_computed_flag_is_present():
+    """`mean_supply_depth: null` 이 '깊이 0' 인지 '안 쟀다' 인지 구분돼야 한다."""
+    assert json.loads(to_json(_block()))["topology_computed"] is True
 
 
 def test_failed_shuffles_are_visible():
