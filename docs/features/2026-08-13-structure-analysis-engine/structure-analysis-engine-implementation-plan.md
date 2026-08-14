@@ -1065,7 +1065,13 @@ git commit -m "feat(structure): 군집별 지표표 (의존도 정의 단일화,
 ```python
 import igraph as ig
 
-from dartweave.structure.sensitivity import RESOLUTIONS, SweepResult, resolution_sweep
+from dartweave.structure.sensitivity import (
+    DEFAULT_MAX_RATIO,
+    RESOLUTIONS,
+    SweepPoint,
+    SweepResult,
+    resolution_sweep,
+)
 
 
 def _two_blobs() -> ig.Graph:
@@ -1093,14 +1099,43 @@ def test_stable_structure_holds_across_the_sweep():
 
 
 def test_wildly_varying_cluster_count_does_not_hold():
-    """실측: 해상도 0.5→2.0 에서 최대군집 126→69. 이런 결론은 반려돼야 한다.
-
-    합성 확인: 무구조 그래프의 최대군집 비중이 0.787→0.087 (spread 0.7) 로 무너진다.
-    """
+    """무구조 그래프는 해상도에 따라 최대군집 비중이 0.787→0.087 로 무너진다."""
     ig.set_random_number_generator(__import__("random").Random(1))
-    r = resolution_sweep(ig.Graph.Erdos_Renyi(n=80, m=240), tolerance=0.05)
+    r = resolution_sweep(ig.Graph.Erdos_Renyi(n=80, m=240))
     assert r.holds is False
-    assert r.spread > 0.5
+    assert r.largest_ratio > 5
+
+
+def test_measured_halving_case_is_rejected():
+    """회귀 방지 — 게이트가 **자기 존재 이유인 사례**를 잡아야 한다.
+
+    실측: 1,490 노드에서 해상도 0.5→2.0 에 최대군집 126→69.
+    비중의 절대 차이로 재면 0.085-0.046 = 0.038 이라 어떤 임계도 통과한다.
+    배율로 재야 1.83배가 드러난다.
+    """
+    from dartweave.structure.sensitivity import stability_ratio
+
+    points = [
+        SweepPoint(resolution=0.5, n_clusters=38, largest_cluster=126,
+                   largest_share=126 / 1490, label="resolution=0.5"),
+        SweepPoint(resolution=2.0, n_clusters=61, largest_cluster=69,
+                   largest_share=69 / 1490, label="resolution=2.0"),
+    ]
+    ratio = stability_ratio(points)
+    assert 1.8 < ratio < 1.9
+    assert ratio > DEFAULT_MAX_RATIO  # 즉, holds=False
+
+
+def test_stable_case_stays_under_the_threshold():
+    """반대편도 고정 — 안 흔들리는 구조를 반려하면 게이트가 쓸모없어진다."""
+    from dartweave.structure.sensitivity import stability_ratio
+
+    points = [
+        SweepPoint(resolution=r, n_clusters=2, largest_cluster=6, largest_share=0.5,
+                   label=f"resolution={r}")
+        for r in (0.5, 2.0)
+    ]
+    assert stability_ratio(points) == 1.0
 
 
 def test_points_carry_cluster_count_and_largest():
@@ -1167,6 +1202,12 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'dartweave.structure.se
 실측: 해상도 0.5→2.0 에서 최대 군집이 126→69 로 반토막 났다. *"가장 큰 군집이 N개사"*
 류 결론은 이 구간을 못 버틴다. 특정 구간에서만 성립하는 결론은 파라미터를 잘 골라서
 나온 우연이므로 보고하지 않는다.
+
+**판정 지표를 비중 차이가 아니라 배율로 재는 이유.** 처음엔 최대군집 비중의 절대
+차이(spread)로 쟀는데, 그러면 위 실측 사례를 **못 잡는다** — 1,490 노드에서 126→69 는
+비중으로 0.085→0.046, 차이가 0.038 밖에 안 돼서 어떤 느슨한 임계도 통과한다.
+군집이 반토막 났는데 게이트가 조용한 것이다. 크기가 절반이 된 건 배율로 봐야
+드러난다(1.83배). 그래서 최대군집 비중의 **최대/최소 비율**로 판정한다.
 """
 from __future__ import annotations
 
@@ -1180,7 +1221,9 @@ from dartweave.structure.weight import EdgeEvidence, edge_weights
 from dartweave.trust.weight import Coefficients
 
 RESOLUTIONS: tuple[float, ...] = (0.5, 0.8, 1.0, 1.2, 1.5, 2.0)
-DEFAULT_TOLERANCE = 0.5  # 최대군집 비중의 허용 변동폭
+# 최대군집 크기의 허용 배율. 실측 접지 — 안정 구조는 1.00배(합성 확인), 실데이터의
+# 문제 사례는 1.83배, 무구조 그래프는 9.05배였다. 1.5 는 그 사이를 가른다.
+DEFAULT_MAX_RATIO = 1.5
 
 # AC-8 — 겹2 계수는 임의값이다. 결론이 그 임의값에 기대고 있으면 결론이 아니다.
 COEFFICIENT_CASES: tuple[tuple[str, Coefficients], ...] = (
@@ -1205,19 +1248,31 @@ class SweepPoint:
 class SweepResult:
     points: list[SweepPoint]
     holds: bool
-    spread: float
+    largest_ratio: float
+
+
+def stability_ratio(points: list[SweepPoint]) -> float:
+    """최대군집 비중의 최대/최소 배율. 1.0 이면 스윕 내내 꿈쩍 안 했다는 뜻.
+
+    비중의 절대 차이를 쓰면 안 된다 — 큰 그래프에서는 군집이 반토막 나도 차이가
+    0.04 수준이라 어떤 임계도 통과한다(실측).
+    """
+    shares = [p.largest_share for p in points if p.largest_share > 0]
+    if not shares:
+        return 1.0
+    return max(shares) / min(shares)
 
 
 def resolution_sweep(
     g: ig.Graph,
     *,
     resolutions: tuple[float, ...] = RESOLUTIONS,
-    tolerance: float = DEFAULT_TOLERANCE,
+    max_ratio: float = DEFAULT_MAX_RATIO,
 ) -> SweepResult:
     points: list[SweepPoint] = []
     for res in resolutions:
         points.append(_point(g, resolution=res, label=f"resolution={res}"))
-    return _summarize(points, tolerance)
+    return _summarize(points, max_ratio)
 
 
 def coefficient_sweep(
@@ -1225,7 +1280,7 @@ def coefficient_sweep(
     evidence: list[EdgeEvidence],
     *,
     resolution: float = 1.0,
-    tolerance: float = DEFAULT_TOLERANCE,
+    max_ratio: float = DEFAULT_MAX_RATIO,
     cases: tuple[tuple[str, Coefficients], ...] = COEFFICIENT_CASES,
 ) -> SweepResult:
     """겹2 계수를 흔들어도 결론이 버티는가 (AC-8).
@@ -1238,7 +1293,7 @@ def coefficient_sweep(
     for label, coef in cases:
         g = project(edges, undirected=True, weights=edge_weights(evidence, coef))
         points.append(_point(g, resolution=resolution, label=label))
-    return _summarize(points, tolerance)
+    return _summarize(points, max_ratio)
 
 
 def _point(ig_graph: ig.Graph, *, resolution: float, label: str) -> SweepPoint:
@@ -1256,10 +1311,9 @@ def _point(ig_graph: ig.Graph, *, resolution: float, label: str) -> SweepPoint:
     )
 
 
-def _summarize(points: list[SweepPoint], tolerance: float) -> SweepResult:
-    shares = [p.largest_share for p in points]
-    spread = max(shares) - min(shares) if shares else 0.0
-    return SweepResult(points=points, holds=spread <= tolerance, spread=spread)
+def _summarize(points: list[SweepPoint], max_ratio: float) -> SweepResult:
+    ratio = stability_ratio(points)
+    return SweepResult(points=points, holds=ratio <= max_ratio, largest_ratio=ratio)
 ```
 
 - [ ] **Step 4: 통과 확인**
@@ -1427,16 +1481,18 @@ def _block() -> EvidenceBlock:
         null_mean=0.7230,
         null_sd=0.0007,
         null_runs=20,
+        null_swaps_failed=0,
         cpm_clusters=52,
         cpm_delta=14,
         sweep_holds=True,
-        sweep_spread=0.08,
+        sweep_ratio=1.12,
         coef_sweep_holds=True,
-        coef_sweep_spread=0.03,
+        coef_sweep_ratio=1.04,
         corporate_resolution_rate=0.60,
+        topology_computed=True,
         scope=Scope(industry="건설", companies=1490, disclosures=2984,
                     fiscal_year="2024", boundary_ratio=0.0),
-        thresholds=Thresholds(0.8, 0.0, 0.05, 3.0, 0.5),
+        thresholds=Thresholds(0.8, 0.0, 0.05, 3.0, 1.5),
         verdict=Verdict.ACCEPTED,
     )
 
@@ -1460,7 +1516,7 @@ def test_both_sweeps_are_reported():
     """AC-7(해상도) 과 AC-8(겹2 계수) 은 별개 축이라 따로 나와야 한다."""
     s = json.loads(to_json(_block()))["verification"]["stability"]
     assert set(s) == {"resolution", "coefficients"}
-    assert s["coefficients"]["spread"] == 0.03
+    assert s["coefficients"]["largest_ratio"] == 1.04
 
 
 def test_verification_carries_null_model_not_just_modularity():
@@ -1469,6 +1525,21 @@ def test_verification_carries_null_model_not_just_modularity():
     v = d["verification"]["structure"]
     assert v["null_mean"] == 0.7230 and v["runs"] == 20
     assert v["effect_size"] == round(0.8535 - 0.7230, 6)
+
+
+def test_topology_computed_flag_is_present():
+    """`mean_supply_depth: null` 이 '깊이 0' 인지 '안 쟀다' 인지 구분돼야 한다."""
+    assert json.loads(to_json(_block()))["topology_computed"] is True
+
+
+def test_failed_shuffles_are_visible():
+    """셔플이 실패하면 귀무모형이 실제값 쪽으로 끌려가 효과크기가 작게 나온다.
+
+    보수적인 방향이라 거짓 채택은 안 생기지만, 그 사실이 숫자만 봐선 안 보인다.
+    그래서 반복수와 함께 실패 횟수도 싣는다.
+    """
+    v = json.loads(to_json(_block()))["verification"]["structure"]
+    assert v["swaps_failed"] == 0
 
 
 def test_cpm_delta_is_exposed():
@@ -1531,7 +1602,7 @@ class Thresholds:
     max_boundary_ratio: float
     min_effect_size: float
     min_z: float
-    sweep_tolerance: float
+    sweep_max_ratio: float
 
 
 @dataclass(frozen=True)
@@ -1545,13 +1616,15 @@ class EvidenceBlock:
     null_mean: float
     null_sd: float
     null_runs: int
+    null_swaps_failed: int
     cpm_clusters: int
     cpm_delta: int
     sweep_holds: bool
-    sweep_spread: float
+    sweep_ratio: float
     coef_sweep_holds: bool
-    coef_sweep_spread: float
+    coef_sweep_ratio: float
     corporate_resolution_rate: float
+    topology_computed: bool
     scope: Scope
     thresholds: Thresholds
     verdict: Verdict
@@ -1587,6 +1660,9 @@ def to_json(block: EvidenceBlock) -> str:
                     "null_mean": block.null_mean,
                     "null_sd": block.null_sd,
                     "runs": block.null_runs,
+                    # 셔플이 실패한 회차. >0 이면 귀무모형이 덜 섞였다는 뜻이라
+                    # 효과크기가 실제보다 작게 나온다 — 숫자만 봐선 안 보이므로 싣는다.
+                    "swaps_failed": block.null_swaps_failed,
                     "effect_size": round(block.modularity - block.null_mean, 6),
                     "cpm_clusters": block.cpm_clusters,
                     "cpm_delta": block.cpm_delta,
@@ -1594,11 +1670,11 @@ def to_json(block: EvidenceBlock) -> str:
                 "stability": {
                     "resolution": {
                         "holds": block.sweep_holds,
-                        "spread": block.sweep_spread,
+                        "largest_ratio": block.sweep_ratio,
                     },
                     "coefficients": {
                         "holds": block.coef_sweep_holds,
-                        "spread": block.coef_sweep_spread,
+                        "largest_ratio": block.coef_sweep_ratio,
                     },
                 },
             },
@@ -1616,8 +1692,11 @@ def to_json(block: EvidenceBlock) -> str:
                 "max_boundary_ratio": block.thresholds.max_boundary_ratio,
                 "min_effect_size": block.thresholds.min_effect_size,
                 "min_z": block.thresholds.min_z,
-                "sweep_tolerance": block.thresholds.sweep_tolerance,
+                "sweep_max_ratio": block.thresholds.sweep_max_ratio,
             },
+            # 경계가 열려 층위·중심성을 산출하지 않았으면 False. 이게 없으면
+            # `mean_supply_depth: null` 이 "깊이 0" 인지 "안 쟀다" 인지 구분되지 않는다.
+            "topology_computed": block.topology_computed,
             "verdict": block.verdict.value,
         },
         ensure_ascii=False,
@@ -1628,7 +1707,7 @@ def to_json(block: EvidenceBlock) -> str:
 - [ ] **Step 4: 통과 확인**
 
 Run: `uv run pytest tests/structure/test_evidence.py -v`
-Expected: PASS — 7 passed
+Expected: PASS — 9 passed
 
 - [ ] **Step 5: 커밋**
 
@@ -1661,7 +1740,9 @@ from dartweave.structure.interpret import (
     interpret,
 )
 
-NUMBERS = {"26.1", "11", "287"}
+# 군집 번호도 숫자다. 실제로는 allowed_tokens 가 payload 의 `"id":0` 에서 뽑아주지만,
+# 픽스처를 손으로 쓸 때는 빠뜨리기 쉽다 — 빠뜨리면 정상 문장이 '지어낸 숫자' 로 걸린다.
+NUMBERS = {"26.1", "11", "287", "0"}
 KNOWN = frozenset({"삼성전자", "태영건설", "건설공제조합", "현대자동차"})
 
 
@@ -1703,6 +1784,24 @@ def test_company_name_present_in_the_input_is_allowed():
     """입력에 있던 회사는 당연히 언급해도 된다 — 검사 대상은 '지어낸 것' 뿐이다."""
     ok, extra = check_output("태영건설이 병목이다.", NUMBERS | {"태영건설"}, KNOWN)
     assert ok, extra
+
+
+def test_parent_name_nested_in_an_allowed_subsidiary_is_not_flagged():
+    """한국 기업명은 접두 중첩이 흔하다 — 포스코/포스코케미칼, 한화/한화솔루션.
+
+    입력에 자회사만 있는데 부모 이름이 그 안에 포함돼 있다고 '지어냈다' 고
+    걸면, 정상 문장이 반려된다. 실측으로 재현된 오탐이다.
+    """
+    known = frozenset({"포스코", "포스코케미칼"})
+    ok, extra = check_output("포스코케미칼이 병목이다.", {"포스코케미칼"}, known)
+    assert ok, extra
+
+
+def test_parent_mentioned_on_its_own_is_still_flagged():
+    """구제는 자회사 이름에 가려진 경우만. 부모를 따로 끌어오면 여전히 환각이다."""
+    known = frozenset({"포스코", "포스코케미칼"})
+    ok, extra = check_output("포스코가 병목이다.", {"포스코케미칼"}, known)
+    assert not ok and "포스코" in extra
 
 
 def test_allowed_tokens_extracts_numbers_and_names_from_payload():
@@ -1758,6 +1857,11 @@ LLM 은 이미 나온 표만 본다. 그리고 출력이 입력 토큰 집합을
 불용어 목록을 늘리는 건 끝이 없다. 대신 **우리가 이미 가진 corpCode 실명 목록**과
 대조한다: 사전에 있는 회사 이름이 출력에 있는데 입력에 없었다면, 그건 지어낸 것이다.
 일반 산문 낱말은 사전에 없으므로 오탐이 나지 않는다(실측 확인).
+
+**이 검사가 보장하는 범위를 정확히 말하면**: "실재하는 회사인데 입력에 없던 것" 을
+잡는다. 사전에 아예 없는 완전 허구의 이름은 못 잡는다. 그래도 이게 유효한 이유는
+현실적인 실패 모드가 **모델이 학습에서 기억한 진짜 회사를 끌어오는 것**이기 때문이다.
+없는 회사를 창작하는 쪽은 프롬프트 금지로 막고, 남는 위험은 여기 적어 둔다.
 """
 from __future__ import annotations
 
@@ -1817,8 +1921,14 @@ def check_output(
         if m not in allowed and m.rstrip("0").rstrip(".") not in allowed:
             extra.append(m)
     for name in known_entities:
-        if len(name) >= MIN_ENTITY_LEN and name in text and name not in allowed:
-            extra.append(name)
+        if len(name) < MIN_ENTITY_LEN or name not in text or name in allowed:
+            continue
+        # 접두 중첩 구제: 허용된 더 긴 이름이 본문에 있고 그 안에 이 이름이
+        # 들어 있으면, 부모 회사가 '등장한' 게 아니라 자회사 이름의 일부일 뿐이다.
+        # 실측 오탐: 입력에 포스코케미칼만 있는데 '포스코' 가 지어낸 이름으로 걸렸다.
+        if any(len(a) > len(name) and name in a and a in text for a in allowed):
+            continue
+        extra.append(name)
     return (not extra), extra
 
 
@@ -1849,7 +1959,7 @@ def interpret(
 - [ ] **Step 4: 통과 확인**
 
 Run: `uv run pytest tests/structure/test_interpret.py -v`
-Expected: PASS — 9 passed
+Expected: PASS — 11 passed
 
 - [ ] **Step 5: 커밋**
 
@@ -1895,12 +2005,40 @@ def test_quality_gate_blocks_before_any_computation():
     assert "0.6" in str(ei.value) or "60" in str(ei.value)
 
 
-def test_boundary_gate_blocks_topology_but_not_clustering():
-    """D2 — 군집은 경계에 견디고 방향 지표는 못 견딘다."""
-    cfg = AnalysisConfig(min_corporate_resolution_rate=0.0, max_boundary_ratio=0.0)
+def test_open_boundary_keeps_clustering_and_drops_only_layering():
+    """D2 — 군집은 경계에 견디고 방향 지표만 못 견딘다.
+
+    통째로 예외를 던지면 멀쩡한 군집 결과까지 버리고, AC-14 가 요구하는
+    "경계 비율이 출력에 명시된다" 를 지킬 출력 자체가 사라진다.
+    실데이터의 경계 비율은 한 번 닫고도 48.6% 였다 — 통째 거부면 아무것도 못 낸다.
+    """
+    cfg = AnalysisConfig(min_corporate_resolution_rate=0.0, max_boundary_ratio=0.0,
+                         null_runs=3)
+    block = analyze(EDGES, interior={"A"}, lens_name="governance",
+                    corporate_resolution_rate=1.0, config=cfg)
+
+    assert block.topology_computed is False
+    assert block.scope.boundary_ratio > 0          # AC-14 — 비율은 출력에 남는다
+    assert block.clusters                           # 군집은 살아남았다
+    assert all(c.mean_supply_depth is None for c in block.clusters)
+
+
+def test_require_topology_turns_the_gate_back_into_an_error():
+    """층위가 반드시 필요한 호출부는 조용한 미산출 대신 예외를 받아야 한다."""
+    cfg = AnalysisConfig(min_corporate_resolution_rate=0.0, max_boundary_ratio=0.0,
+                         require_topology=True)
     with pytest.raises(BoundaryNotClosed):
         analyze(EDGES, interior={"A"}, lens_name="governance",
                 corporate_resolution_rate=1.0, config=cfg)
+
+
+def test_closed_boundary_still_computes_layering():
+    """반대편 고정 — 경계가 닫혔는데 층위를 안 내면 게이트가 과잉이다."""
+    cfg = AnalysisConfig(min_corporate_resolution_rate=0.0, max_boundary_ratio=0.0,
+                         null_runs=3)
+    block = analyze(EDGES, interior=INTERIOR, lens_name="governance",
+                    corporate_resolution_rate=1.0, config=cfg)
+    assert block.topology_computed is True
 
 
 def test_closed_graph_produces_an_evidence_block():
@@ -1997,11 +2135,11 @@ from dartweave.structure.metrics import cluster_metrics
 from dartweave.structure.nullmodel import degree_preserving_null
 from dartweave.structure.project import boundary_of, project
 from dartweave.structure.sensitivity import (
-    DEFAULT_TOLERANCE,
+    DEFAULT_MAX_RATIO,
     coefficient_sweep,
     resolution_sweep,
 )
-from dartweave.structure.topology import topology
+from dartweave.structure.topology import BoundaryNotClosed, topology
 from dartweave.structure.verdict import MIN_EFFECT, MIN_Z, decide
 from dartweave.structure.weight import EdgeEvidence, edge_weights
 
@@ -2019,7 +2157,12 @@ class AnalysisConfig:
     resolution: float = 1.0
     cpm_resolution: float = 0.005
     null_runs: int = 20
-    sweep_tolerance: float = DEFAULT_TOLERANCE
+    sweep_max_ratio: float = DEFAULT_MAX_RATIO
+    # 기본은 False — 경계가 열려도 **군집 결과는 돌려준다**. 실측상 군집은 경계에
+    # 견디고(효과크기 +0.1211→+0.1305) 방향 지표만 뒤집히므로, 통째로 거부하면
+    # 멀쩡한 결과까지 버리게 된다. 실데이터의 경계 비율은 한 번 닫고도 48.6% 였다.
+    # 층위가 반드시 필요한 호출부만 True 로 켜서 예외를 받는다.
+    require_topology: bool = False
     fiscal_year: str = "2024"
     industry: str = "미지정"
 
@@ -2070,15 +2213,25 @@ def analyze(
     nat = project(kept, undirected=False)
 
     # [G2] 경계 게이트 — 층위·중심성만 막는다. 군집은 경계에 견딘다.
-    topo = topology(nat, boundary, max_boundary_ratio=cfg.max_boundary_ratio)
+    # 거부는 예외가 아니라 **미산출 + 표시**로 표현한다. 예외로 끝내면 AC-14 가
+    # 요구하는 "경계 비율이 출력에 명시된다" 를 지킬 출력 자체가 사라진다.
+    try:
+        depth = topology(
+            nat, boundary, max_boundary_ratio=cfg.max_boundary_ratio
+        ).depth
+        topo_computed = True
+    except BoundaryNotClosed:
+        if cfg.require_topology:
+            raise
+        depth, topo_computed = {}, False
 
     clu = cluster(und, objective="modularity", resolution=cfg.resolution, seed=1)
     codes = list(und.vs["corp_code"])
     membership = dict(zip(codes, clu.membership))
 
-    rows = cluster_metrics(kept, membership, depth=topo.depth)
+    rows = cluster_metrics(kept, membership, depth=depth)
     null = degree_preserving_null(und, runs=cfg.null_runs, seed=1)
-    sweep = resolution_sweep(und, tolerance=cfg.sweep_tolerance)
+    sweep = resolution_sweep(und, max_ratio=cfg.sweep_max_ratio)
     cmp_obj = compare_objectives(
         und, resolution=cfg.resolution, cpm_resolution=cfg.cpm_resolution
     )
@@ -2087,12 +2240,12 @@ def analyze(
     # "버텼다" 가 아니라 **검사하지 않았다** 로 두고 결론 판정에서 제외한다.
     if kept_ev is not None:
         coef = coefficient_sweep(
-            kept, kept_ev, resolution=cfg.resolution, tolerance=cfg.sweep_tolerance
+            kept, kept_ev, resolution=cfg.resolution, max_ratio=cfg.sweep_max_ratio
         )
-        coef_holds, coef_spread = coef.holds, coef.spread
+        coef_holds, coef_ratio = coef.holds, coef.largest_ratio
         stability_holds = sweep.holds and coef.holds
     else:
-        coef_holds, coef_spread = False, 0.0
+        coef_holds, coef_ratio = False, 1.0
         stability_holds = sweep.holds
 
     verdict = decide(
@@ -2112,13 +2265,15 @@ def analyze(
         null_mean=null.mean,
         null_sd=null.sd,
         null_runs=null.runs,
+        null_swaps_failed=null.swaps_failed,
         cpm_clusters=cmp_obj["cpm_clusters"],
         cpm_delta=cmp_obj["delta"],
         sweep_holds=sweep.holds,
-        sweep_spread=sweep.spread,
+        sweep_ratio=sweep.largest_ratio,
         coef_sweep_holds=coef_holds,
-        coef_sweep_spread=coef_spread,
+        coef_sweep_ratio=coef_ratio,
         corporate_resolution_rate=corporate_resolution_rate,
+        topology_computed=topo_computed,
         scope=Scope(
             industry=cfg.industry,
             companies=len({v for e in kept for v in e[:2]}),
@@ -2131,7 +2286,7 @@ def analyze(
             max_boundary_ratio=cfg.max_boundary_ratio,
             min_effect_size=MIN_EFFECT,
             min_z=MIN_Z,
-            sweep_tolerance=cfg.sweep_tolerance,
+            sweep_max_ratio=cfg.sweep_max_ratio,
         ),
         verdict=verdict,
     )
@@ -2142,7 +2297,7 @@ def analyze(
 - [ ] **Step 4: 통과 확인**
 
 Run: `uv run pytest tests/structure/test_pipeline.py -v`
-Expected: PASS — 8 passed
+Expected: PASS — 10 passed
 
 - [ ] **Step 5: 커밋**
 
@@ -2188,7 +2343,7 @@ def _planted_blocks(k: int = 4, size: int = 8) -> list[tuple[str, str, str]]:
 
 
 def test_planted_structure_beats_its_null():
-    """실측 접지: 32노드 4블록에서 실제 0.7239 vs 귀무 0.2727 (효과 +0.4512)."""
+    """실측 접지: 32노드 4블록에서 실제 0.7239 vs 귀무 0.2713 (효과 +0.4526)."""
     edges = _planted_blocks()
     g = ig.Graph.TupleList([(a, b) for a, b, _ in edges], directed=False)
     r = degree_preserving_null(g, runs=10, seed=1)
@@ -2198,10 +2353,12 @@ def test_planted_structure_beats_its_null():
 
 
 def test_random_graph_yields_no_conclusion_not_a_crash():
-    """무구조 입력에서 엔진이 죽지 않고 `결론 없음` 을 돌려줘야 한다 (AC-10).
+    """무구조 입력에서 엔진이 죽지 않고 **확정 결론을 내지 않아야** 한다 (AC-10).
 
     시드를 고정해야 결정적이다 — ER 효과크기는 시드에 따라 -0.013 ~ +0.020 을
     오가고, 임계(0.05)에 가깝게 튀는 draw 가 실제로 관측됐다.
+    실제로 이 시드에서 나오는 값은 `PARAMETER_DEPENDENT` 다 — 무구조 그래프는
+    해상도에 따라 최대군집이 크게 흔들려 안정성 검사에서 먼저 걸린다.
     """
     ig.set_random_number_generator(random.Random(1))
     g = ig.Graph.Erdos_Renyi(n=40, m=120)
@@ -2303,11 +2460,23 @@ def test_valid_run_emits_evidence_json(tmp_path):
     assert d["scope"]["industry"] == "건설"
 
 
-def test_open_boundary_exits_with_its_own_code(tmp_path):
-    """게이트마다 exit code 가 달라야 자동화가 원인을 구분한다."""
+def test_open_boundary_still_emits_clustering_by_default(tmp_path):
+    """경계가 열려도 군집은 나온다 — 실데이터 경계 비율이 48.6% 라 통째 거부는 무용지물."""
     f = tmp_path / "g.json"
     f.write_text(json.dumps({"edges": EDGES, "interior": ["A"]}), encoding="utf-8")
     r = _run("--graph", str(f), "--lens", "governance",
+             "--min-resolution-rate", "0", "--null-runs", "3")
+    assert r.returncode == 0, r.stderr
+    d = json.loads(r.stdout)
+    assert d["topology_computed"] is False
+    assert d["scope"]["boundary_ratio"] > 0
+
+
+def test_require_topology_exits_with_its_own_code(tmp_path):
+    """게이트마다 exit code 가 달라야 자동화가 원인을 구분한다."""
+    f = tmp_path / "g.json"
+    f.write_text(json.dumps({"edges": EDGES, "interior": ["A"]}), encoding="utf-8")
+    r = _run("--graph", str(f), "--lens", "governance", "--require-topology",
              "--min-resolution-rate", "0", "--null-runs", "3")
     assert r.returncode == 4 and "경계 게이트" in r.stderr
 
@@ -2374,6 +2543,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-boundary-ratio", type=float, default=0.0)
     p.add_argument("--null-runs", type=int, default=20)
     p.add_argument("--industry", default="미지정", help="AC-13 분석 범위 표기")
+    p.add_argument(
+        "--require-topology",
+        action="store_true",
+        help="경계가 열려 있으면 부분 산출 대신 중단한다 (exit 4)",
+    )
     p.add_argument("--fiscal-year", default="2024")
 
     try:
@@ -2410,6 +2584,7 @@ def main(argv: list[str] | None = None) -> int:
         min_corporate_resolution_rate=args.min_resolution_rate,
         max_boundary_ratio=args.max_boundary_ratio,
         null_runs=args.null_runs,
+        require_topology=args.require_topology,
         industry=args.industry,
         fiscal_year=args.fiscal_year,
     )
@@ -2440,7 +2615,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: 통과 확인**
 
 Run: `uv run pytest tests/structure/test_cli.py -v`
-Expected: PASS — 6 passed
+Expected: PASS — 7 passed
 
 - [ ] **Step 5: 전체 스위트 확인**
 
@@ -2474,6 +2649,9 @@ git commit -m "feat(structure): 분석 CLI (게이트별 exit code 분리)"
 - `src/dartweave/structure/interpret.py:interpret` — **breaking**: `check_output` 을 우회해 모델 텍스트를 직접 쓰는 경로가 생기면 AC-9 가 무력화된다 | mitigation: 해석문을 얻는 공개 경로를 `interpret()` 하나로 유지. 위반 시 `HallucinationDetected` 로 **중단**하고 텍스트를 돌려주지 않음
 - `src/dartweave/structure/weight.py:MIN_WEIGHT` — **side-effect**: 하한이 없으면 가중치 0 엣지를 Leiden 이 무시해 그래프가 조용히 끊긴다 | mitigation: 양수 보장 테스트
 - `src/dartweave/structure/sensitivity.py:COEFFICIENT_CASES` — **side-effect**: 계수 축을 전수 조합하면 폭발한다(4축 × 각 3값 = 81회 클러스터링). 현재는 **축별 독립 5케이스**이며 계수 간 상호작용은 검사하지 않는다 | mitigation: 케이스 목록을 상수로 노출하고 근거 블록에 `label` 을 실어 무엇을 검사했는지/안 했는지 드러냄. 상호작용은 범위 밖으로 명시
+- `src/dartweave/structure/pipeline.py:analyze` — **breaking**: 게이트 두 개는 **계산 앞**에 있어야 한다. 뒤로 옮기면 이미 나온 결과를 보고 통과 여부를 정하게 되어 사후 합리화가 들어온다 | mitigation: G1 은 함수 진입 직후, G2 는 군집 계산 전에 배치 + 게이트별 테스트
+- `src/dartweave/structure/pipeline.py:AnalysisConfig.require_topology` — **side-effect**: 기본값 False 라 경계가 열리면 **조용히 부분 산출**된다. 통째 거부가 아닌 이유는 실데이터 경계가 48.6% 라 그러면 아무것도 못 내기 때문이지만, 소비자가 `topology_computed` 를 안 보면 `mean_supply_depth: null` 을 "깊이 0" 으로 오독한다 | mitigation: 근거 블록에 `topology_computed` 를 실어 층2가 반드시 렌더하게 함 + 강제가 필요한 호출부는 `require_topology=True`
+- `src/dartweave/structure/sensitivity.py:DEFAULT_MAX_RATIO` — **breaking**: 판정 지표를 배율에서 절대 차이로 되돌리면 게이트가 **자기 존재 이유인 사례를 통과시킨다**. 1,490 노드에서 최대군집 126→69 는 비중 차이 0.038 이라 어떤 임계도 넘는다 | mitigation: `test_measured_halving_case_is_rejected` 가 실측 수치로 고정. 실그래프 실행에서 배율 1.85 로 반려 확인
 - `src/dartweave/structure/pipeline.py:analyze` — **breaking**: `evidence` 와 `edges` 는 평행 리스트다. 렌즈 필터를 엣지에만 적용하면 **가중치가 엉뚱한 엣지에 붙고**, 그 오염은 군집 결과까지 조용히 흘러간다 | mitigation: `select_indices()` 로 같은 인덱스를 양쪽에 적용 + 길이 불일치 시 `ValueError`
 - `src/dartweave/structure/verdict.py:MIN_EFFECT` — **side-effect**: 0.02 로 두면 무구조 ER 그래프가 통과한다(실측 상한 +0.020). 반대로 과하게 올리면 진짜 신호(+0.1305)를 놓친다 | mitigation: 잡음 상한·실측 신호 양쪽을 고정한 테스트 2건
 
@@ -2545,3 +2723,39 @@ git commit -m "feat(structure): 분석 CLI (게이트별 exit code 분리)"
 - **G1 의 재현율 검사 미활성**: 재현율·정밀도는 본문 LLM 추출(슬라이스 2)이 있어야 값이 생긴다. 지금은 **해소율만으로** G1 이 동작한다. 기술설계 §6 이 `blocking` 으로 기록한 항목이며 Task 12 본문에 명시했다.
 - **`min_corporate_resolution_rate` 기본값 0.8 은 현재 실데이터(법인 해소율 60.0%)로 통과하지 못한다.** 의도된 동작 — 임계를 낮추는 게 아니라 `entity_alias` 사전으로 해소율을 올리는 게 먼저다.
 - **2자 기업명 환각 사각지대**: `MIN_ENTITY_LEN=3` 이라 `대상`·`경방`·`한화` 는 검사에서 빠진다. 낮추면 "분석 **대상**은" 같은 정상 문장이 반려된다.
+
+### [2026-08-14 —] [코드-수정] (batch: tasks 1..14)
+- **id**: CH-20260814-004
+- **이유**: 층1 구조 분석 엔진 전 task 구현 완료. 브랜치 `feat/structure-analysis-engine`
+- **무엇이**: `src/dartweave/structure/` 12모듈 · `scripts/analyze_structure.py` · `scripts/plan_byte_check.py` · `tests/structure/` 12파일 (32 files, +2,557 / −53)
+- **영향범위**: 신규 패키지만 추가. 층0 코드 **수정 0건** — 기존 148 테스트 무손상. 전체 **243 passed**
+- **위험 카테고리**: side-effect, breaking, race (RISK 주석 14건, 11모듈)
+- **연관 commits**: `45b984f..f09c88b` (16개). `git show <SHA>` 로 조회 — 변경 전/후 코드는 생략
+- **연관 항목**: CH-20260814-003 (계획서)
+
+#### 계획서 대비 실행 중 교정 4건
+
+무인 실행이 아니라 **구현자·리뷰어가 계획서의 결함을 되돌려 보고**해서 잡힌 것들이다. byte-copy 규칙 덕분에 임의로 고치지 않고 보고한 게 매번 옳은 판단이었다.
+
+| # | 무엇 | 잡은 주체 | 왜 중요한가 |
+|---|---|---|---|
+| 12 | `NUMBERS` 픽스처에 군집번호 `"0"` 누락 | task 11 구현자 | 임의로 `check_output` 을 손봤다면 환각 검사가 헐거워졌다 |
+| 13 | 한국어 접두 중첩 오탐 (포스코/포스코케미칼) | wave 2 리뷰어 | 정상 문장이 반려된다. 한국 기업명에 흔한 형태 |
+| 14 | **민감도 게이트가 자기 존재 이유인 사례를 통과** | 메인 | 최대군집 126→69(1.83배)가 비중 차이로는 0.038 이라 어떤 임계도 넘었다 → 배율 판정으로 교체 |
+| 15 | **`analyze()` 가 경계 열리면 통째로 예외** | task 12 구현자 | 기술설계 도식은 "군집은 통과시킨다" 인데 유효한 결과까지 버렸다. 실데이터 경계 48.6% 라 **실제로 아무것도 못 내는 상태**였고, AC-14 의 "경계 비율이 출력에 명시" 도 출력이 없어 성립 불가 |
+
+#### 실그래프 검증 (1,490 노드 · 1,892 엣지)
+
+CLI 엔드투엔드로 0.3초. 별도 실험(`data/boundary.log`)과 독립적으로 일치했다.
+
+- 모듈러리티 **0.8535** vs 귀무 **0.7223** → 효과크기 **+0.1312** (실험값 +0.1305)
+- 민감도 게이트가 배율 **1.85** 로 **반려** → 판정 `parameter_dependent`
+- CPM **67** vs 모듈러리티 **40** — 모듈러리티가 **27개를 놓친다**
+- 경계 100% → `topology_computed: false`, 군집 40개는 정상 산출
+- `--require-topology` 시 exit 4 로 중단
+
+**엔진이 결론을 채택하지 않은 것이 정상 동작이다.** 구조는 귀무모형보다 유의하지만 해상도에 흔들리므로, "가장 큰 군집이 N개사" 류 주장은 파라미터 의존적이라고 판정했다.
+
+#### 검증 도구 신설
+
+`scripts/plan_byte_check.py` — 계획서의 `**수정 후**` 블록과 실제 파일을 기계 대조한다. 서브에이전트가 한국어 근거 문장을 재서술해도 테스트는 통과하므로 테스트로는 안 잡힌다. **29/29 블록 byte-equal** 확인. `--ignore-risk` 는 메인이 사후에 붙인 거버넌스 주석을 차이로 치지 않는다.

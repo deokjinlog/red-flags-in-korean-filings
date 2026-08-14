@@ -6,3 +6,6 @@
 .venv/
 __pycache__/
 data/
+
+# intent-locked-workflow 실행 버퍼 (end-of-run 에 정리됨)
+.intent-locked/
