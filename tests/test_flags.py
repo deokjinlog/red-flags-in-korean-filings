@@ -188,3 +188,45 @@ def test_internal_trade_threshold_is_visible_in_the_summary():
 def test_evidence_is_newest_first():
     f = internal_trade(TRADE)
     assert f.evidence[0].startswith("20240301")
+
+
+# --- 루브릭: 임의 임계 대신 실측 분포 ------------------------------------------
+
+from dartweave.screen.flags import (  # noqa: E402
+    RARITY_COMMON, RARITY_RARE, RARITY_UNCOMMON, funding_rarity, rarity, trade_rarity,
+)
+
+# 실측(표본 200사·2024)
+DIST_TRADE = {"zero_ratio": 0.845, "median": 0, "p90": 3, "p95": 6, "p99": 18, "max": 26}
+
+
+def test_rarity_uses_measured_percentiles_not_a_made_up_threshold():
+    assert rarity(2, DIST_TRADE)[0] == RARITY_COMMON
+    assert rarity(13, DIST_TRADE)[0] == RARITY_UNCOMMON   # 한화 실측값
+    assert rarity(25, DIST_TRADE)[0] == RARITY_RARE
+
+
+def test_rarity_reason_carries_the_percentiles():
+    """등급만 주면 못 믿는다 — 어느 분포의 어디인지가 같이 나와야 한다."""
+    _, why = rarity(13, DIST_TRADE)
+    assert "p95=6" in why and "p99=18" in why and "84%는 0건" in why
+
+
+def test_without_a_baseline_it_says_so_rather_than_guessing():
+    """기준선이 없으면 '흔한지 모른다' 고 적는다. 없는 임계를 지어내지 않는다."""
+    f = trade_rarity([("20240101", "동일인등출자계열회사와의상품ㆍ용역거래")])
+    assert f and "기준선 없음" in f.summary
+
+
+def test_no_composite_score_is_produced():
+    """항목을 하나로 합치면 '위험도 0.73' 이 되고 아무도 못 믿는다."""
+    import dartweave.screen.flags as m
+    assert not any(n for n in dir(m) if "score" in n.lower() or "total" in n.lower())
+
+
+def test_funding_and_trade_are_graded_separately():
+    reports = [("20240101", "특수관계인으로부터자금차입"),
+               ("20240202", "동일인등출자계열회사와의상품ㆍ용역거래")]
+    dist_f = {"zero_ratio": 0.935, "p95": 2, "p99": 5}
+    assert funding_rarity(reports, dist_f).kind == "특수관계인 자금거래"
+    assert trade_rarity(reports, DIST_TRADE).kind == "계열사 내부거래"

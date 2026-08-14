@@ -291,3 +291,70 @@ def internal_trade(reports: list[tuple[str, str]], *, min_count: int = 3) -> Fla
         summary=f"상품·용역거래 공시 {len(hits)}건 (임계 {min_count}건)",
         evidence=[f"{d} {n}" for d, n in sorted(hits, reverse=True)[:5]],
     )
+
+
+# 관측값이 실측 분포의 어디에 있는가. **"좋음/나쁨" 이 아니라 "얼마나 흔치 않은가"** 다.
+# 데이터가 지지하는 건 희소성이고, 투자 판단은 사람이 한다.
+#
+# 실측 기준선(표본 200사·2024): 특수관계인 자금거래는 93.5% 가 0건(p95=2·p99=5),
+# 계열사 내부거래는 84.5% 가 0건(p90=3·p95=6·p99=18). 대부분이 0이라 평균은
+# 쓸모없고 분위수를 본다.
+RARITY_COMMON = "흔함"
+RARITY_UNCOMMON = "드묾"
+RARITY_RARE = "매우 드묾"
+
+
+def rarity(value: int, dist: dict[str, float]) -> tuple[str, str]:
+    """(등급, 근거 문장). 임의 임계 대신 실측 분포 안의 위치로 말한다.
+
+    종합 점수를 만들지 않는다 — 항목을 하나로 합치는 순간 "위험도 0.73" 이 되고,
+    그건 아무도 못 믿고 못 반박한다.
+    """
+    p95, p99 = dist.get("p95", 0), dist.get("p99", 0)
+    zero = dist.get("zero_ratio", 0.0)
+    if value > p99:
+        grade = RARITY_RARE
+        where = f"상위 1% 밖 (p99={p99})"
+    elif value > p95:
+        grade = RARITY_UNCOMMON
+        where = f"상위 1~5% (p95={p95} · p99={p99})"
+    else:
+        grade = RARITY_COMMON
+        where = f"상위 5% 이내 아님 (p95={p95})"
+    return grade, f"{value}건 — {where} · 표본의 {zero:.0%}는 0건"
+
+
+def _counted_flag(
+    reports: list[tuple[str, str]],
+    keywords: tuple[str, ...],
+    kind: str,
+    dist: dict[str, float] | None,
+    min_count: int,
+) -> Flag | None:
+    hits = [(d, n) for d, n in reports if any(k in n for k in keywords)]
+    if not hits or len(hits) < min_count:
+        return None
+    if dist:
+        grade, why = rarity(len(hits), dist)
+        summary = f"{grade} — {why}"
+    else:
+        summary = f"공시 {len(hits)}건 (기준선 없음 — 흔한 수준인지 알 수 없음)"
+    return Flag(
+        kind=kind,
+        summary=summary,
+        evidence=[f"{d} {n}" for d, n in sorted(hits, reverse=True)[:5]],
+    )
+
+
+def funding_rarity(
+    reports: list[tuple[str, str]], dist: dict[str, float] | None = None
+) -> Flag | None:
+    """특수관계인 자금거래를 실측 분포 위에 놓는다."""
+    return _counted_flag(reports, FUNDING_KEYWORDS, "특수관계인 자금거래", dist, 1)
+
+
+def trade_rarity(
+    reports: list[tuple[str, str]], dist: dict[str, float] | None = None
+) -> Flag | None:
+    """계열사 내부거래를 실측 분포 위에 놓는다."""
+    return _counted_flag(reports, TRADE_KEYWORDS, "계열사 내부거래", dist, 1)

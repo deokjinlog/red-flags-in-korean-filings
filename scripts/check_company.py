@@ -23,7 +23,7 @@ from dartweave.dart.status import Action, classify
 from dartweave.parse.structured_rel import parse_investment, parse_major_shareholder
 from dartweave.resolve.aliases import load_aliases
 from dartweave.resolve.resolver import Resolver
-from dartweave.screen.flags import internal_trade, related_party_funding, screen
+from dartweave.screen.flags import funding_rarity, screen, trade_rarity
 from dartweave.structure.interpret import allowed_tokens, build_prompt
 from dartweave.structure.project import project
 
@@ -197,7 +197,15 @@ def main(argv: list[str] | None = None) -> int:
     if not args.no_fetch:
         reports = fetch_fairtrade(code, args.year)
         print(f"  공정위 공시   {len(reports)}건 ({args.year})")
-        flags += [f for f in (related_party_funding(reports), internal_trade(reports))
+        base = {}
+        bp = Path("data/baseline_fairtrade.json")
+        if bp.exists():
+            base = json.loads(bp.read_text(encoding="utf-8"))
+            print(f"  기준선        표본 {base.get('sample')}사 ({base.get('year')})")
+        else:
+            print("  기준선        없음 — `scripts/build_baseline.py` 로 먼저 재세요")
+        flags += [f for f in (funding_rarity(reports, base.get("funding")),
+                              trade_rarity(reports, base.get("trade")))
                   if f is not None]
 
     if not flags:
