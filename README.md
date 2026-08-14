@@ -1,4 +1,4 @@
-# distress-signals-in-korean-filings
+# red-flags-in-korean-filings
 
 전자공시(DART)에서 부실 신호를 읽되, **그 신호가 우연과 구분되는지 먼저 검정한다.**
 신호가 잡히면 지분 관계 그래프로 누구까지 물리는지 보여준다.
