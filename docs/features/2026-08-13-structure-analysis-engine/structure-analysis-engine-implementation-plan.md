@@ -2343,7 +2343,7 @@ def _planted_blocks(k: int = 4, size: int = 8) -> list[tuple[str, str, str]]:
 
 
 def test_planted_structure_beats_its_null():
-    """실측 접지: 32노드 4블록에서 실제 0.7239 vs 귀무 0.2727 (효과 +0.4512)."""
+    """실측 접지: 32노드 4블록에서 실제 0.7239 vs 귀무 0.2713 (효과 +0.4526)."""
     edges = _planted_blocks()
     g = ig.Graph.TupleList([(a, b) for a, b, _ in edges], directed=False)
     r = degree_preserving_null(g, runs=10, seed=1)
@@ -2353,10 +2353,12 @@ def test_planted_structure_beats_its_null():
 
 
 def test_random_graph_yields_no_conclusion_not_a_crash():
-    """무구조 입력에서 엔진이 죽지 않고 `결론 없음` 을 돌려줘야 한다 (AC-10).
+    """무구조 입력에서 엔진이 죽지 않고 **확정 결론을 내지 않아야** 한다 (AC-10).
 
     시드를 고정해야 결정적이다 — ER 효과크기는 시드에 따라 -0.013 ~ +0.020 을
     오가고, 임계(0.05)에 가깝게 튀는 draw 가 실제로 관측됐다.
+    실제로 이 시드에서 나오는 값은 `PARAMETER_DEPENDENT` 다 — 무구조 그래프는
+    해상도에 따라 최대군집이 크게 흔들려 안정성 검사에서 먼저 걸린다.
     """
     ig.set_random_number_generator(random.Random(1))
     g = ig.Graph.Erdos_Renyi(n=40, m=120)
