@@ -187,11 +187,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  지분율 조회   {len(shares)}건 · 대상 {len(to_fetch)}개사 "
               f"({args.year} 사업보고서)")
 
+    gbp = Path("data/baseline_graph.json")
+    gbase = json.loads(gbp.read_text(encoding="utf-8")) if gbp.exists() else {}
+    if gbase:
+        print(f"  그래프 기준선 {gbase.get('nodes'):,}개사 전수")
     flags = screen(
         edges, code, name=nm,
         chokepoints=rank_chokepoints(edges, TOP_CHOKEPOINTS),
         group_of=group_of,
         share_of=shares,
+        baseline=gbase,
     )
 
     if not args.no_fetch:

@@ -27,6 +27,38 @@ NEAR_HOPS = 2      # 공동 의존점까지 몇 홉이면 '물려 있다' 로 �
 MIN_MEANINGFUL_PCT = 1.0
 
 
+# 관측값이 실측 분포의 어디에 있는가. **"좋음/나쁨" 이 아니라 "얼마나 흔치 않은가"** 다.
+# 데이터가 지지하는 건 희소성이고, 투자 판단은 사람이 한다.
+#
+# 실측 기준선(표본 200사·2024): 특수관계인 자금거래는 93.5% 가 0건(p95=2·p99=5),
+# 계열사 내부거래는 84.5% 가 0건(p90=3·p95=6·p99=18). 대부분이 0이라 평균은
+# 쓸모없고 분위수를 본다.
+RARITY_COMMON = "흔함"
+RARITY_UNCOMMON = "드묾"
+RARITY_RARE = "매우 드묾"
+
+
+def rarity(value: int, dist: dict[str, float]) -> tuple[str, str]:
+    """(등급, 근거 문장). 임의 임계 대신 실측 분포 안의 위치로 말한다.
+
+    종합 점수를 만들지 않는다 — 항목을 하나로 합치는 순간 "위험도 0.73" 이 되고,
+    그건 아무도 못 믿고 못 반박한다.
+    """
+    p95, p99 = dist.get("p95", 0), dist.get("p99", 0)
+    zero = dist.get("zero_ratio", 0.0)
+    if value > p99:
+        grade = RARITY_RARE
+        where = f"상위 1% 밖 (p99={p99})"
+    elif value > p95:
+        grade = RARITY_UNCOMMON
+        where = f"상위 1~5% (p95={p95} · p99={p99})"
+    else:
+        grade = RARITY_COMMON
+        where = f"상위 5% 이내 아님 (p95={p95})"
+    return grade, f"{value}건 — {where} · 표본의 {zero:.0%}는 0건"
+
+
+
 @dataclass(frozen=True)
 class Flag:
     """걸린 항목 하나. `evidence` 없이는 만들 수 없다 — 근거 없는 경고는 소음이다."""
@@ -73,6 +105,7 @@ def mutual_holdings(
     name=str,
     share_of: dict[tuple[str, str], float] | None = None,
     min_pct: float = MIN_MEANINGFUL_PCT,
+    dist: dict[str, float] | None = None,
 ) -> Flag | None:
     """서로 지분을 보유 — A가 B를, B가 A를 함께 보유.
 
@@ -96,11 +129,11 @@ def mutual_holdings(
             lines.append(f"{name(corp_code)} ↔ {name(c)} · 최대 {max(pcts):.2f}%")
     if not lines:
         return None
-    return Flag(
-        kind="상호 지분 보유",
-        summary=f"서로 보유하는 상대 {len(lines)}곳 (규제상 상호출자와는 별개)",
-        evidence=lines,
-    )
+    head = "서로 보유하는 상대 {}곳 (규제상 상호출자와는 별개)".format(len(lines))
+    if dist:
+        grade, why = rarity(len(lines), dist)
+        head = f"{grade} — {why} · 규제상 상호출자와는 별개"
+    return Flag(kind="상호 지분 보유", summary=head, evidence=lines)
 
 
 def circular_holdings(
@@ -109,6 +142,7 @@ def circular_holdings(
     *,
     name=str,
     max_len: int = MAX_CYCLE_LEN,
+    dist: dict[str, float] | None = None,
 ) -> Flag | None:
     """순환출자 — A→B→C→…→A 로 돌아오는 고리.
 
@@ -136,9 +170,12 @@ def circular_holdings(
     if not cycles:
         return None
     cycles.sort(key=len)
+    head = f"고리 {len(cycles)}건 (최단 {len(cycles[0]) - 1}단계)"
+    if dist:
+        grade, why = rarity(len(cycles), dist)
+        head = f"{grade} — {why} · 최단 {len(cycles[0]) - 1}단계"
     return Flag(
-        kind="순환출자",
-        summary=f"자기 자신으로 돌아오는 고리 {len(cycles)}건 (최단 {len(cycles[0]) - 1}단계)",
+        kind="순환출자", summary=head,
         evidence=[" → ".join(name(c) for c in cyc) for cyc in cycles[:5]],
     )
 
@@ -176,6 +213,7 @@ def near_chokepoint(
     *,
     name=str,
     max_hops: int = NEAR_HOPS,
+    dist: dict[str, float] | None = None,
 ) -> Flag | None:
     """공동 의존점에 물려 있는가.
 
@@ -188,9 +226,13 @@ def near_chokepoint(
     if not hit:
         return None
     ordered = sorted(hit.items(), key=lambda kv: (kv[1], chokepoints[kv[0]]))
+    head = f"{max_hops}홉 안에 공동 의존점 {len(hit)}곳"
+    if dist:
+        grade, why = rarity(len(hit), dist)
+        head = f"{grade} — {why} · {max_hops}홉 기준"
     return Flag(
         kind="공동의존점 근접",
-        summary=f"{max_hops}홉 안에 공동 의존점 {len(hit)}곳",
+        summary=head,
         evidence=[
             f"{name(c)} — {h}홉 · 매개중심성 {chokepoints[c]}위" for c, h in ordered[:5]
         ],
@@ -239,13 +281,17 @@ def screen(
     chokepoints: dict[str, int] | None = None,
     group_of: dict[str, str] | None = None,
     share_of: dict[tuple[str, str], float] | None = None,
+    baseline: dict[str, dict[str, float]] | None = None,
 ) -> list[Flag]:
     """걸리는 것만 모아서 돌려준다. 빈 목록은 '이상 없음' 이 아니라 **'이 검사들에는
     안 걸렸음'** 이다 — 검사 범위 밖의 위험은 이 함수가 모른다."""
+    b = baseline or {}
     found = [
-        mutual_holdings(edges, corp_code, name=name, share_of=share_of),
-        circular_holdings(edges, corp_code, name=name),
-        near_chokepoint(edges, corp_code, chokepoints or {}, name=name),
+        mutual_holdings(edges, corp_code, name=name, share_of=share_of,
+                        dist=b.get("mutual")),
+        circular_holdings(edges, corp_code, name=name, dist=b.get("cycles")),
+        near_chokepoint(edges, corp_code, chokepoints or {}, name=name,
+                        dist=b.get("near_chokepoint")),
         crosses_group_boundary(edges, corp_code, group_of or {}, name=name),
     ]
     return [f for f in found if f is not None]
@@ -291,37 +337,6 @@ def internal_trade(reports: list[tuple[str, str]], *, min_count: int = 3) -> Fla
         summary=f"상품·용역거래 공시 {len(hits)}건 (임계 {min_count}건)",
         evidence=[f"{d} {n}" for d, n in sorted(hits, reverse=True)[:5]],
     )
-
-
-# 관측값이 실측 분포의 어디에 있는가. **"좋음/나쁨" 이 아니라 "얼마나 흔치 않은가"** 다.
-# 데이터가 지지하는 건 희소성이고, 투자 판단은 사람이 한다.
-#
-# 실측 기준선(표본 200사·2024): 특수관계인 자금거래는 93.5% 가 0건(p95=2·p99=5),
-# 계열사 내부거래는 84.5% 가 0건(p90=3·p95=6·p99=18). 대부분이 0이라 평균은
-# 쓸모없고 분위수를 본다.
-RARITY_COMMON = "흔함"
-RARITY_UNCOMMON = "드묾"
-RARITY_RARE = "매우 드묾"
-
-
-def rarity(value: int, dist: dict[str, float]) -> tuple[str, str]:
-    """(등급, 근거 문장). 임의 임계 대신 실측 분포 안의 위치로 말한다.
-
-    종합 점수를 만들지 않는다 — 항목을 하나로 합치는 순간 "위험도 0.73" 이 되고,
-    그건 아무도 못 믿고 못 반박한다.
-    """
-    p95, p99 = dist.get("p95", 0), dist.get("p99", 0)
-    zero = dist.get("zero_ratio", 0.0)
-    if value > p99:
-        grade = RARITY_RARE
-        where = f"상위 1% 밖 (p99={p99})"
-    elif value > p95:
-        grade = RARITY_UNCOMMON
-        where = f"상위 1~5% (p95={p95} · p99={p99})"
-    else:
-        grade = RARITY_COMMON
-        where = f"상위 5% 이내 아님 (p95={p95})"
-    return grade, f"{value}건 — {where} · 표본의 {zero:.0%}는 0건"
 
 
 def _counted_flag(

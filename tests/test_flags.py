@@ -230,3 +230,42 @@ def test_funding_and_trade_are_graded_separately():
     dist_f = {"zero_ratio": 0.935, "p95": 2, "p99": 5}
     assert funding_rarity(reports, dist_f).kind == "특수관계인 자금거래"
     assert trade_rarity(reports, DIST_TRADE).kind == "계열사 내부거래"
+
+
+# --- 그래프 검사에도 실측 분포 등급 (전수 1,490개사) ---------------------------
+
+DIST_CYCLES = {"zero_ratio": 0.994, "p90": 0, "p95": 0, "p99": 0, "max": 3}
+DIST_NEAR = {"zero_ratio": 0.284, "median": 1, "p90": 5, "p95": 6, "p99": 8, "max": 11}
+
+
+def test_any_cycle_is_rare_because_99_percent_have_none():
+    """실측: 1,490개사 중 99.4% 가 순환출자 고리 0건. 걸리면 그것만으로 드물다."""
+    from dartweave.screen.flags import circular_holdings
+    edges = [("a", "b", R), ("b", "c", R), ("c", "a", R)]
+    f = circular_holdings(edges, "a", name=name, dist=DIST_CYCLES)
+    assert f.summary.startswith(RARITY_RARE)
+
+
+def test_common_chokepoint_proximity_is_labelled_common():
+    """실측: 71.6% 가 2홉 안에 공동의존점을 갖는다.
+
+    등급 없이 '걸림' 만 표시하면 회사 10곳 중 7곳에 경고가 붙는다 — 정의상 소음이다.
+    """
+    from dartweave.screen.flags import near_chokepoint
+    edges = [("a", "h", R)]
+    f = near_chokepoint(edges, "a", {"h": 3}, name=name, dist=DIST_NEAR)
+    assert f.summary.startswith(RARITY_COMMON)
+
+
+def test_many_chokepoints_is_still_flagged_as_rare():
+    from dartweave.screen.flags import near_chokepoint
+    edges = [("a", f"h{i}", R) for i in range(9)]
+    f = near_chokepoint(edges, "a", {f"h{i}": i + 1 for i in range(9)},
+                        name=name, dist=DIST_NEAR)
+    assert f.summary.startswith(RARITY_RARE)
+
+
+def test_graph_baseline_flows_through_screen():
+    edges = [("a", "b", R), ("b", "c", R), ("c", "a", R)]
+    flags = screen(edges, "a", name=name, baseline={"cycles": DIST_CYCLES})
+    assert any(f.summary.startswith(RARITY_RARE) for f in flags)
