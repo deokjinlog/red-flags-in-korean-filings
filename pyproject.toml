@@ -1,7 +1,7 @@
 [project]
 name = "dartweave"
 version = "0.1.0"
-description = "DART 공시 이중 출처 신뢰 그래프"
+description = "DART 공시에서 부실 신호를 읽고 검정한다"
 requires-python = ">=3.13"
 dependencies = [
     "httpx>=0.28",
