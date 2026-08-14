@@ -43,6 +43,8 @@ class Resolver:
     _corp_attempts: int = 0
     _corp_hits: int = 0
     _natural: int = 0
+    # corpCode 등재 대상이 아닌 것 — 해외법인·투자조합·특별계정. 자연인과 같은 처지다.
+    _unregistrable: int = 0
     _unknown: int = 0
 
     def __post_init__(self) -> None:
@@ -64,6 +66,10 @@ class Resolver:
             self._corp_attempts += 1  # 법인인데 미해소 = 진짜 문제
         elif kind is EntityKind.NATURAL:
             self._natural += 1  # 개인은 corp_code 가 없다 — 미해소가 정상
+        elif kind is EntityKind.UNREGISTRABLE:
+            # 해외 자회사·투자조합·특별계정은 corpCode 등재 대상이 아니다.
+            # 자연인과 같은 이유로 분모에서 뺀다 — 실측상 미해소 법인 표기의 80%다.
+            self._unregistrable += 1
         else:
             self._unknown += 1
 
@@ -95,6 +101,7 @@ class Resolver:
             "corporate_resolved": self._corp_hits,
             "corporate_unresolved": self._corp_attempts - self._corp_hits,
             "natural_person": self._natural,
+            "unregistrable": self._unregistrable,
             "unknown": self._unknown,
             "corporate_resolution_rate": self.corporate_resolution_rate(),
             "overall_resolution_rate": self.resolution_rate(),

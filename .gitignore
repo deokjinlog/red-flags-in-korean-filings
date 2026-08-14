@@ -9,3 +9,6 @@ data/
 
 # intent-locked-workflow 실행 버퍼 (end-of-run 에 정리됨)
 .intent-locked/
+
+# corpCode 마스터 캐시 (20MB 다운로드 결과)
+data/

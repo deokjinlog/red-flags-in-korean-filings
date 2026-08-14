@@ -10,9 +10,20 @@ def test_corporate_markers_are_detected():
     for nm in (
         "삼성생명보험㈜", "(주)케이티", "동진홀딩스주식회사",
         "재단법인 동진장학연구재단", "건설공제조합", "국민연금공단",
-        "TOKAI CARBON CO.,LTD.", "베어링자산운용", "PolarCapitalLLP",
+        "베어링자산운용",
     ):
         assert classify_name(nm) is EntityKind.CORPORATE, nm
+
+
+def test_foreign_corporations_are_no_longer_lumped_into_corporate():
+    """분류 체계가 3분류 → 4분류로 넓어지며 바뀐 지점.
+
+    `TOKAI CARBON CO.,LTD.`·`PolarCapitalLLP` 는 Ltd/LLP 표지를 달았지만
+    corpCode(국내 등록법인 명부)에 없다. 예전엔 CORPORATE 로 세서 '매핑 실패' 로
+    잡혔는데, 실측상 미해소 표기의 56.7% 가 이 형태라 법인 해소율을 통째로 왜곡했다.
+    """
+    for nm in ("TOKAI CARBON CO.,LTD.", "PolarCapitalLLP"):
+        assert classify_name(nm) is EntityKind.UNREGISTRABLE, nm
 
 
 def test_natural_persons_are_detected():
