@@ -100,3 +100,39 @@ def test_interpret_passes_the_built_prompt_to_the_model():
 
     interpret('{"clusters":[{"id":0,"nodes":11}]}', fake, KNOWN)
     assert "수치에 없는" in seen[0]
+
+
+def test_numbers_inside_evidence_strings_are_allowed():
+    """근거가 "매개중심성 3위" 로 통째로 들어오면 모델은 "3위" 라고 풀어 쓴다.
+
+    실측 회귀: 낱개 '3' 이 허용 토큰에 없어 **사실인 문장이 반려됐다.**
+    막는 방향으로 틀린 거지만, 이대로면 정상 문장이 거의 다 걸려 생성을 못 붙인다.
+    """
+    payload = ('{"direct": ["건설공제조합"], '
+               '"shared": ["건설공제조합 — 1홉 · 매개중심성 3위"]}')
+    ok, extra = check_output(
+        "건설공제조합이 1홉 거리에 있고 매개중심성 3위다.",
+        allowed_tokens(payload), KNOWN)
+    assert ok, extra
+
+
+def test_invented_number_is_still_caught_after_the_relaxation():
+    """완화해도 없는 숫자는 여전히 걸려야 한다 — 안 그러면 검사가 무의미해진다."""
+    payload = '{"shared": ["건설공제조합 — 1홉 · 매개중심성 3위"]}'
+    ok, extra = check_output("매개중심성 99위다.", allowed_tokens(payload), KNOWN)
+    assert not ok and "99" in extra
+
+
+def test_trailing_zero_normalization_does_not_open_a_hole():
+    """실측 결함 — 400 을 rstrip("0") 하면 4 가 되고, 4 가 허용되면 400 이 통과했다.
+
+    "태영건설은 부채비율이 400%다" 라는 완전한 환각이 그렇게 새어 나왔다.
+    소수 표기 흔들림만 흡수하고 정수는 건드리지 않는다.
+    """
+    payload = '{"rank": "매개중심성 4위"}'
+    ok, extra = check_output("부채비율이 400%다.", allowed_tokens(payload), KNOWN)
+    assert not ok and "400" in extra
+
+    ok2, _ = check_output("의존도 26.10 이다.",
+                          allowed_tokens('{"v": "26.1"}'), KNOWN)
+    assert ok2

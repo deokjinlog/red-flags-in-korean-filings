@@ -53,9 +53,18 @@ def allowed_tokens(payload_json: str) -> set[str]:
             toks.add(str(node))
 
     walk(json.loads(payload_json))
-    numeric = {t for t in list(toks) if _NUMBER.fullmatch(t)}
-    for t in list(numeric):
-        toks.add(t.rstrip("0").rstrip(".") if "." in t else t)
+
+    # 문자열 **안에 박힌 숫자**도 허용한다. 근거가 "매개중심성 3위" 로 통째로 들어오면
+    # 모델은 자연히 "3위" 라고 풀어 쓰는데, 낱개 '3' 이 없어 정상 문장이 반려됐다(실측).
+    # 막는 방향으로 틀린 거라 안전하긴 하지만, 이대로면 생성 단계를 못 붙인다.
+    for t in list(toks):
+        toks.update(_NUMBER.findall(t))
+
+    # 소수 표기 흔들림만 흡수한다 ("26.10" → "26.1"). **정수는 건드리지 않는다** —
+    # 실측 결함: 400 을 rstrip("0") 하면 4 가 되고, 4 가 허용 토큰에 있어서
+    # "부채비율 400%" 같은 완전한 환각이 통과했다.
+    for t in [x for x in toks if _NUMBER.fullmatch(x) and "." in x]:
+        toks.add(t.rstrip("0").rstrip("."))
     return toks
 
 
@@ -79,7 +88,8 @@ def check_output(
     """
     extra: list[str] = []
     for m in _NUMBER.findall(text):
-        if m not in allowed and m.rstrip("0").rstrip(".") not in allowed:
+        norm = m.rstrip("0").rstrip(".") if "." in m else m
+        if m not in allowed and norm not in allowed:
             extra.append(m)
     for name in known_entities:
         if len(name) < MIN_ENTITY_LEN or name not in text or name in allowed:
