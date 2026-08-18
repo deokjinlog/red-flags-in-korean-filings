@@ -3,7 +3,8 @@
 전자공시를 이어서 **개별 공시로는 안 보이는 지배구조 이상 신호**를 찾는다.
 점수를 내지 않고, 무엇이 걸렸고 어느 공시에서 나왔는지만 낸다.
 
-> 화면: [docs/screen.html](docs/screen.html) · [게시본](https://claude.ai/code/artifact/e9e351cd-c090-4849-8ab8-87812e8bd342)
+**▶ [실행 결과 화면 보기](https://deokjinlog.github.io/red-flags-in-korean-filings/)**
+— 실측 수치와 세 가지 발견, 그리고 엔진이 스스로 반려한 판정
 
 ---
 
