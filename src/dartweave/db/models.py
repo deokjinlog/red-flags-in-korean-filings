@@ -119,3 +119,46 @@ class Contradiction(Base):
     detected_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     verdict: Mapped[str | None] = mapped_column(String(20))
     verdict_by: Mapped[str | None] = mapped_column(String(100))
+
+
+class RelationFact(Base):
+    """관계 사실 하나 — **append-only**. 정정공시가 와도 덮어쓰지 않는다.
+
+    두 시점을 분리해서 갖는 게 이 테이블의 존재 이유다.
+      `as_of`     사실 기준일 — 이 지분율이 언제 기준인가
+      `rcept_dt`  공시 시점   — 그 사실을 언제 알게 됐나
+
+    왜 분리하나: "T 시점 신호가 이후 부실을 예고했나" 를 검정하려면 **T 시점에 알 수
+    있었던 것만** 써야 한다. 정정공시는 as_of 가 과거인데 rcept_dt 는 나중이다.
+    덮어쓰면 그 구분이 사라지고 미래 정보가 새어들어 검정이 통째로 무효가 된다.
+
+    기본키에 `rcept_no` 가 들어가므로 정정공시는 자연히 새 행이 된다.
+    """
+
+    __tablename__ = "relation_fact"
+    rcept_no: Mapped[str] = mapped_column(String(14), primary_key=True)
+    source_corp_code: Mapped[str] = mapped_column(String(8), primary_key=True, index=True)
+    target_corp_code: Mapped[str] = mapped_column(String(8), primary_key=True, index=True)
+    rel_type: Mapped[str] = mapped_column(String(40), primary_key=True)
+    stock_knd: Mapped[str] = mapped_column(String(40), primary_key=True, default="")
+    as_of: Mapped[str] = mapped_column(String(8), index=True)
+    rcept_dt: Mapped[str] = mapped_column(String(8), index=True)
+    share_pct: Mapped[float | None] = mapped_column(Float)
+    share_qty: Mapped[int | None] = mapped_column(Integer)
+    is_structured: Mapped[bool] = mapped_column(Boolean, default=True)
+    cross_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class DistressEvent(Base):
+    """부실 사건 라벨 — 부도·회생·관리절차·영업정지.
+
+    실측(2024 1분기): 주요사항보고 1,809건 중 부실 관련 16건. 연간 추정 96건이고
+    그중 부도급이 50건 수준이다. 예측 모델에는 부족하고 신호 검정에는 쓸 수 있다.
+    """
+
+    __tablename__ = "distress_event"
+    rcept_no: Mapped[str] = mapped_column(String(14), primary_key=True)
+    corp_code: Mapped[str] = mapped_column(String(8), index=True)
+    event_type: Mapped[str] = mapped_column(String(40), index=True)
+    rcept_dt: Mapped[str] = mapped_column(String(8), index=True)
+    detail: Mapped[dict] = mapped_column(JSON)
