@@ -1,0 +1,212 @@
+<title>공시가 그리는 기업 경계</title>
+<style>
+  :root {
+    --paper:#EFF2F6; --sheet:#FFF; --ink:#131A23; --muted:#5B6878;
+    --accent:#1A4E8A; --signal:#9E3226; --rule:#D2D9E3; --rule-soft:#E4E9F0; --wash:#E6EBF2;
+    --serif:'Nanum Myeongjo','Apple SD Gothic Neo',Batang,Georgia,serif;
+    --sans:Pretendard,-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic','Noto Sans KR',sans-serif;
+    --mono:'SF Mono','Cascadia Mono',Consolas,D2Coding,ui-monospace,monospace;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --paper:#0D1218; --sheet:#151C25; --ink:#E3E9F1; --muted:#8B98AA;
+    --accent:#74AAE8; --signal:#DE7C6C; --rule:#273241; --rule-soft:#1E2732; --wash:#1A222D;}}
+  :root[data-theme="dark"]{
+    --paper:#0D1218; --sheet:#151C25; --ink:#E3E9F1; --muted:#8B98AA;
+    --accent:#74AAE8; --signal:#DE7C6C; --rule:#273241; --rule-soft:#1E2732; --wash:#1A222D;}
+
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;
+       line-height:1.7;margin:0;padding:0 1.25rem 6rem;-webkit-font-smoothing:antialiased}
+  .band{max-width:62rem;margin:0 auto;height:4px;background:var(--accent)}
+  .sheet{max-width:62rem;margin:0 auto;background:var(--sheet);border:1px solid var(--rule);
+         border-top:none;padding:0 clamp(1.25rem,4vw,3.5rem) 4rem}
+  h1,h2{font-family:var(--serif);font-weight:700;text-wrap:balance;margin:0}
+  h1{font-size:clamp(1.9rem,4.4vw,2.9rem);line-height:1.25;letter-spacing:-.01em}
+  h2{font-size:clamp(1.3rem,2.6vw,1.7rem);line-height:1.35}
+  p{margin:0;max-width:40rem}
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;
+           text-transform:uppercase;color:var(--muted)}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  header{padding:2.75rem 0 2rem;display:flex;flex-direction:column;gap:1rem}
+  .scope{display:flex;flex-wrap:wrap;gap:0 1.6rem;border-top:1px solid var(--rule);
+         border-bottom:1px solid var(--rule);padding:.7rem 0;font-family:var(--mono);
+         font-size:.78rem;color:var(--muted);font-variant-numeric:tabular-nums}
+  .scope b{color:var(--ink);font-weight:600}
+  section{padding-top:3rem;display:flex;flex-direction:column;gap:1.1rem}
+  .kind{display:inline-block;font-family:var(--mono);font-size:.7rem;letter-spacing:.12em;
+        text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);
+        border-radius:2px;padding:.15rem .5rem;align-self:flex-start}
+  .verdict{border:2px solid var(--signal);background:var(--sheet);padding:1.5rem 1.6rem;
+           display:flex;flex-direction:column;gap:.9rem}
+  .vhead{display:flex;align-items:baseline;gap:.9rem;flex-wrap:wrap;font-family:var(--serif)}
+  .stamp{font-family:var(--mono);font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;
+         color:var(--signal);border:1px solid var(--signal);padding:.2rem .55rem}
+  .vhead b{font-size:1.35rem;color:var(--signal)}
+  .tablewrap{overflow-x:auto;border-top:1px solid var(--rule)}
+  table{border-collapse:collapse;width:100%;font-size:.9rem}
+  caption{text-align:left;font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;
+          text-transform:uppercase;color:var(--muted);padding-bottom:.5rem}
+  th,td{padding:.5rem .9rem .5rem 0;text-align:left;border-bottom:1px solid var(--rule-soft);
+        vertical-align:top}
+  th{font-family:var(--mono);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;
+     color:var(--muted);font-weight:400;border-bottom:1px solid var(--rule);white-space:nowrap}
+  td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+  tr.mark td{background:var(--wash)}
+  .note{color:var(--accent);font-size:.78rem;font-family:var(--mono)}
+  dl{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1.4rem;margin:0;
+     font-family:var(--mono);font-size:.85rem;font-variant-numeric:tabular-nums}
+  dt{color:var(--muted);white-space:nowrap} dd{margin:0}
+  pre{background:var(--wash);border:1px solid var(--rule);padding:1rem 1.1rem;overflow-x:auto;
+      font-family:var(--mono);font-size:.82rem;line-height:1.6;margin:0}
+  ul{margin:0;padding-left:1.1rem;max-width:40rem} li{margin-bottom:.4rem}
+  li::marker{color:var(--muted)}
+  footer{padding-top:3rem;margin-top:1rem;border-top:1px solid var(--rule);color:var(--muted);
+         font-size:.85rem;display:flex;flex-direction:column;gap:.4rem}
+  code{font-family:var(--mono);font-size:.88em;color:var(--accent)}
+  a{color:var(--accent)} a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+
+<div class="band"></div>
+<div class="sheet">
+
+<header>
+  <span class="eyebrow">DART 정기보고서 · 지분 관계 그래프</span>
+  <h1>개별 공시로는 안 보이고,<br>1,490건을 이으면 보이는 것</h1>
+  <p>전자공시의 최대주주 현황과 타법인 출자 현황을 한 장의 그래프로 잇고, 그 위에서
+     구조를 읽는다. 아래 숫자는 전부 실행 결과이며 예시가 아니다.</p>
+  <div class="scope">
+    <span>기업 <b>1,490</b></span><span>지분 엣지 <b>1,892</b></span>
+    <span>사업연도 <b>2024</b></span><span>검사 <b>6종</b></span>
+    <span>테스트 <b>320</b></span><span>실행 <b>0.3초</b></span>
+  </div>
+</header>
+
+<section>
+  <div class="verdict">
+    <div class="vhead"><span class="stamp">판정</span>
+      <b>파라미터 의존적 — 채택하지 않음</b></div>
+    <p>구조는 무작위보다 분명히 유의했다. 그런데 군집 해상도를 0.5에서 2.0으로 흔들자
+       가장 큰 군집의 크기가 <span class="num">1.85배</span> 변했다. 임계는
+       <span class="num">1.5배</span>다. <strong>"가장 큰 군집이 N개사" 류의 주장은 이 구간을
+       못 버틴다</strong> — 파라미터를 잘 골라서 나온 숫자이므로 결론으로 보고하지 않는다.</p>
+    <dl>
+      <dt>모듈러리티</dt><dd>0.8535</dd>
+      <dt>차수보존 귀무모형</dt><dd>0.7223 (10회 반복 · 셔플 실패 0)</dd>
+      <dt>효과크기</dt><dd>+0.1314 — 임계 +0.05 통과</dd>
+      <dt>해상도 안정성</dt><dd>1.85배 — 임계 1.5배 <strong>초과 · 반려</strong></dd>
+    </dl>
+    <p>절대 기준을 썼다면 0.8535는 "매우 우수"였다. 귀무모형이 이미 0.7223이라는 걸
+       재보지 않으면 알 수 없다. <strong>순위와 존재는 말할 수 있고, 크기는 말할 수 없다.</strong></p>
+  </div>
+</section>
+
+<section>
+  <span class="kind">검색</span>
+  <h2>질문에 답할 근거를 구조에서 가져온다</h2>
+  <p>같은 질문을 벡터 검색에 넣으면 <strong>질문과 닮은 문서</strong>가 나온다.
+     그래프에 넣으면 <strong>구조로 이어진 것</strong>이 나온다. 둘은 다른 답이다.</p>
+<pre>$ ask.py "태영건설이 흔들리면 어디가 위험해?"
+
+인식        태영건설 (00153861)
+도달 범위   1홉 122개사 · 2홉 80개사
+공동의존점  건설공제조합 1홉 매개3위 · 삼성생명 1홉 매개9위
+순환출자    매우 드묾 — 상위 1% 밖
+            태영건설 → 삼양사 → 티와이홀딩스 → 태영건설
+
+모델에 넘길 것   근거 899자 · 허용 토큰 46개</pre>
+  <p><strong>"건설공제조합" 은 질문 어디에도 없다.</strong> 질문과 닮은 구석이 없으니 벡터
+     유사도로는 안 나온다. 태영건설에서 한 홉 건너가야 나오고, 그게 그래프를 쓰는 이유의
+     전부다.</p>
+  <p>생성 쪽은 프롬프트 하나 차이다. 모델이 말할 수 있는 범위는 저
+     <strong>토큰 46개</strong> 안이고, 벗어나면 중단된다 — 판정은 계산이 하고 모델은
+     옮기기만 한다.</p>
+</section>
+
+<section>
+  <span class="kind">발견 · 경계 불일치</span>
+  <h2>공식 지정으로는 네 개 그룹, 지분으로는 한 덩어리</h2>
+  <p>공정거래위원회 기업집단 지정 기준으로 현대자동차·HD현대·KCC·현대백화점은 서로 다른
+     집단이다. 지분 관계 그래프에서는 <strong>같은 군집 110개사</strong>로 묶인다. 2000년대에
+     계열분리된 범현대가가 상호 출자를 남겨둔 결과다.</p>
+<pre>케이씨씨 → 현대모비스 → 현대자동차 → HD현대 → HD한국조선해양 → 케이씨씨
+
+케이씨씨 ↔ HD한국조선해양   서로를 보유 · 최대 3.91%</pre>
+  <p>여신 심사에서 동일차주를 공식 지정 기준으로 잡으면 이 넷은 독립적인 네 개 차주다.
+     지분 연결은 그 경계를 넘어간다.</p>
+</section>
+
+<section>
+  <span class="kind">발견 · 공동 의존</span>
+  <h2>연결은 적은데, 끊으면 여러 군집이 갈라지는 곳</h2>
+  <div class="tablewrap">
+    <table>
+      <caption>매개중심성 상위 · 지분 렌즈</caption>
+      <thead><tr><th>기업</th><th class="n">매개중심성</th><th class="n">차수</th><th>비고</th></tr></thead>
+      <tbody>
+        <tr><td>삼성전자</td><td class="n">215,080</td><td class="n">68</td><td></td></tr>
+        <tr><td>태영건설</td><td class="n">176,794</td><td class="n">124</td><td></td></tr>
+        <tr class="mark"><td>건설공제조합</td><td class="n">147,187</td><td class="n">15</td>
+            <td><span class="note">차수 대비 매개 이상</span></td></tr>
+        <tr><td>삼성화재해상보험</td><td class="n">145,281</td><td class="n">32</td><td></td></tr>
+        <tr class="mark"><td>한국경제신문</td><td class="n">142,874</td><td class="n">11</td>
+            <td><span class="note">차수 대비 매개 이상</span></td></tr>
+        <tr><td>한화</td><td class="n">129,830</td><td class="n">90</td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><strong>건설공제조합은 연결이 15개뿐인데 매개중심성 3위다.</strong> 여러 건설사가 공동으로
+     출자한 지점이라, 여기가 흔들리면 서로 무관해 보이던 건설사들이 동시에 영향을 받는다.</p>
+  <p>이 둘은 <strong>수집 경계를 닫기 전에는 보이지 않았다.</strong> 건설공제조합의 차수는
+     경계를 닫자 6에서 15로, 매개중심성은 65,929에서 147,187로 올랐다. 같은 조건에서
+     씨브이네트는 24,372에서 11,281로 붕괴했다 — 그쪽은 경계 인공물이었다.</p>
+</section>
+
+<section>
+  <span class="kind">루브릭</span>
+  <h2>"걸림" 이 아니라 "얼마나 흔치 않은가"</h2>
+  <p>임의 임계를 쓰지 않는다. 실측 분포 안의 위치로 말한다.</p>
+  <div class="tablewrap">
+    <table>
+      <caption>기준선 · 그래프는 1,490개사 전수 · 공정위 공시는 표본 200사</caption>
+      <thead><tr><th>항목</th><th class="n">0인 회사</th><th class="n">p95</th>
+                 <th class="n">p99</th><th class="n">최대</th></tr></thead>
+      <tbody>
+        <tr><td>순환출자 고리</td><td class="n">99.4%</td><td class="n">0</td>
+            <td class="n">0</td><td class="n">3</td></tr>
+        <tr><td>상호 지분 보유</td><td class="n">98.5%</td><td class="n">0</td>
+            <td class="n">1</td><td class="n">2</td></tr>
+        <tr class="mark"><td>2홉 내 공동의존점</td><td class="n">28.4%</td><td class="n">6</td>
+            <td class="n">8</td><td class="n">11</td></tr>
+        <tr><td>특수관계인 자금거래</td><td class="n">93.5%</td><td class="n">2</td>
+            <td class="n">5</td><td class="n">7</td></tr>
+        <tr><td>계열사 내부거래</td><td class="n">84.5%</td><td class="n">6</td>
+            <td class="n">18</td><td class="n">26</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><strong>이 표가 검사 하나를 죽였다.</strong> 공동의존점 근접은 71.6%가 걸린다 — 등급 없이
+     "걸림" 만 표시하면 회사 10곳 중 7곳에 경고가 붙고, 그건 정의상 소음이다. 반대로
+     순환출자는 걸리는 것만으로 상위 0.6%다.</p>
+  <p><strong>종합 점수는 만들지 않는다.</strong> 항목을 하나로 합치는 순간 "위험도 0.73"이 되고,
+     그건 아무도 못 믿고 못 반박한다.</p>
+</section>
+
+<section>
+  <span class="kind">한계</span>
+  <h2>지금 할 수 없는 것</h2>
+  <ul>
+    <li><strong>미래 예측을 못 한다.</strong> 부실 라벨이 3년치 278건이고 특징은 수십 개다.
+        모델을 만들면 과적합이 확정적이라, 신호를 하나씩 검정하는 쪽으로 간다.</li>
+    <li><strong>인과를 못 말한다.</strong> "건설공제조합이 병목이라 위험이 번진다"가 아니라
+        "구조상 병목 위치에 있다"까지가 데이터가 지지하는 범위다.</li>
+    <li><strong>계열 라벨이 20개뿐이다.</strong> 공정위 집단명은 DART에 없어 외부 데이터가 필요하다.</li>
+    <li><strong>재무를 안 붙였다.</strong> 확산 반경은 개수지 금액이 아니다.</li>
+  </ul>
+</section>
+
+<footer>
+  <span>DART OpenAPI 정기보고서 + 공정거래위원회 공시 · 2024 사업연도 · 지분 관계 렌즈</span>
+  <span>구조 분석 12모듈 · 이상신호 검사 6종 · 테스트 320</span>
+  <span><code>scripts/ask.py</code> 질문 검색 · <code>scripts/check_company.py</code> 종목 검사</span>
+</footer>
+
+</div>
