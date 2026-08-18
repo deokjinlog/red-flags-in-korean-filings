@@ -54,6 +54,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--years", default="2024", help="쉼표 구분 (예: 2022,2023,2024)")
     p.add_argument("--limit", type=int, default=50, help="이번 실행에서 처리할 (기업,연도) 수")
     p.add_argument("--graph", default="data/graph_closed.json")
+    p.add_argument("--source", choices=("graph", "listed"), default="graph",
+                   help="graph=기존 그래프 노드 · listed=상장사 전체(build_universe.py)")
     p.add_argument("--db", default=DB)
     args = p.parse_args(argv)
 
@@ -62,12 +64,20 @@ def main(argv: list[str] | None = None) -> int:
         print("DART_API_KEY 가 없습니다.", file=sys.stderr)
         return 2
 
-    raw = json.loads(Path(args.graph).read_text(encoding="utf-8"))["edges"]
-    codes: list[str] = []
-    for a, b, _ in raw:
-        for c in (a, b):
-            if c not in codes:
-                codes.append(c)
+    if args.source == "listed":
+        uni = Path("data/universe_listed.json")
+        if not uni.exists():
+            print("먼저 `uv run python scripts/build_universe.py` 를 돌리세요.",
+                  file=sys.stderr)
+            return 2
+        codes = list(json.loads(uni.read_text(encoding="utf-8")))
+    else:
+        raw = json.loads(Path(args.graph).read_text(encoding="utf-8"))["edges"]
+        codes = []
+        for a, b, _ in raw:
+            for c in (a, b):
+                if c not in codes:
+                    codes.append(c)
 
     years = [y.strip() for y in args.years.split(",") if y.strip()]
     todo = [f"{c}:{y}" for y in years for c in codes]
