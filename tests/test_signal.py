@@ -54,3 +54,25 @@ def test_all_three_verdicts_are_the_same_type():
           permutation_test(_grp(3, 100), _grp(2, 100), runs=200)]
     assert all(isinstance(r.verdict, Verdict) for r in rs)
     assert len({r.verdict for r in rs}) == 3
+
+
+def test_repeated_observations_inflate_significance():
+    """실측 사고 재현 — 같은 회사를 여러 번 세면 p 가 부풀려진다.
+
+    순환출자 검정에서 기업-연도로 세니 ×4.18 · p=0.0005 로 유의했는데,
+    회사당 한 번만 세니 신호군 부실이 10건뿐이라 TOO_FEW 였다.
+    같은 관측을 4배로 복제하면 차이가 그대로여도 p 가 극적으로 낮아진다.
+    """
+    sig, ctl = _grp(6, 30), _grp(10, 300)          # 회사 단위 — 양성 6건
+    once = permutation_test(sig, ctl, runs=500)
+    assert once.verdict is Verdict.TOO_FEW          # 20건 미만이라 판정 거부
+
+    four = permutation_test(sig * 4, ctl * 4, runs=500)   # 같은 걸 4번 복제
+    assert four.verdict is Verdict.SUPPORTED        # 비율은 같은데 유의해진다
+    assert abs(four.signal_rate - once.signal_rate) < 1e-9
+
+
+def test_min_positives_guard_is_what_caught_it():
+    """복제로 부풀린 결과를 막은 건 MIN_POSITIVES 가드였다."""
+    assert permutation_test(_grp(19, 100), _grp(5, 500), runs=200).verdict is Verdict.TOO_FEW
+    assert permutation_test(_grp(20, 100), _grp(5, 500), runs=200).verdict is not Verdict.TOO_FEW

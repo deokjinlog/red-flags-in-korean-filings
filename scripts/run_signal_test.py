@@ -80,36 +80,70 @@ def build_features(edges, chokepoints, hops=2):
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--db", default="sqlite:///data/timeseries.db")
-    p.add_argument("--as-of", required=True, help="특징 계산 시점 (YYYYMMDD)")
+    p.add_argument("--as-of", required=True,
+                   help="특징 계산 시점. 쉼표로 여러 개 주면 기업-연도 패널로 합친다")
     p.add_argument("--within-days", type=int, default=365, help="라벨 관찰 창")
     p.add_argument("--runs", type=int, default=2000)
+    p.add_argument("--unit", choices=("company", "company-year"), default="company",
+                   help="company=회사당 1관측(기본·독립성 유지) · "
+                        "company-year=기업-연도 패널(같은 회사가 여러 번 들어가 p가 부풀려짐)")
     args = p.parse_args(argv)
 
-    with Session(create_engine(args.db)) as s:
-        latest = latest_edges_at(s, args.as_of)
-        events = events_after(s, args.as_of, within_days=args.within_days)
+    points = [t.strip() for t in args.as_of.split(",") if t.strip()]
+    panel: dict[str, list[tuple[str, bool]]] = {s: [] for s in SIGNALS}
+    n_obs = n_ev = 0
 
-    edges = [(f.source_corp_code, f.target_corp_code, f.rel_type) for f in latest.values()]
-    if not edges:
-        print(f"{args.as_of} 시점에 알 수 있었던 관계가 없습니다. "
-              "수집이 더 필요하거나 시점이 이릅니다.")
-        return 3
+    for t in points:
+        with Session(create_engine(args.db)) as s:
+            latest = latest_edges_at(s, t)
+            events = events_after(s, t, within_days=args.within_days)
+        edges = [(f.source_corp_code, f.target_corp_code, f.rel_type)
+                 for f in latest.values()]
+        if not edges:
+            print(f"  {t}: 알 수 있었던 관계 없음 — 건너뜀")
+            continue
+        if events:
+            assert_no_look_ahead(t, min(e.rcept_dt for e in events))
 
-    g = project(edges, undirected=True); g.simplify()
-    ranked = sorted(zip(g.vs["corp_code"], g.betweenness()), key=lambda x: -x[1])
-    chokes = {c for c, _ in ranked[:12]}
+        g = project(edges, undirected=True); g.simplify()
+        ranked = sorted(zip(g.vs["corp_code"], g.betweenness()), key=lambda x: -x[1])
+        nodes, feats = build_features(edges, {c for c, _ in ranked[:12]})
+        distressed = {e.corp_code for e in events}
+        n_obs += len(nodes)
+        n_ev += len(distressed & set(nodes))
+        for sig in SIGNALS:
+            for n in nodes:
+                panel[sig].append((n, n in distressed)) if n in feats[sig] else None
+        # 대조군은 신호별로 따로 담는다
+        for sig in SIGNALS:
+            panel.setdefault(sig + "_ctl", []).extend(
+                (n, n in distressed) for n in nodes if n not in feats[sig])
+        print(f"  {t}: 대상 {len(nodes):,}사 · 관계 {len(edges):,} · "
+              f"창 안 부실 {len(distressed & set(nodes)):,}사")
 
-    nodes, feats = build_features(edges, chokes)
-    distressed = {e.corp_code for e in events}
-    assert_no_look_ahead(args.as_of, min(e.rcept_dt for e in events) if events else "99991231")
+    if args.unit == "company":
+        # 같은 회사를 한 번만 센다. 관측 독립성이 회복된다.
+        # ⚠️ 이 구분이 결정적이다. 기업-연도로 세면 순환출자가 ×4.18 · p=0.0005 로
+        #    유의하게 나왔는데, 회사 단위로 다시 세니 신호군 부실이 10건뿐이라
+        #    TOO_FEW 였다. 같은 회사를 4번 센 것이 만든 허수였다.
+        for sig in SIGNALS:
+            for key in (sig, sig + "_ctl"):
+                by_corp: dict[str, bool] = {}
+                for corp, d in panel[key]:
+                    by_corp[corp] = by_corp.get(corp, False) or d
+                panel[key] = list(by_corp.items())
+        n_obs = len({c for sig in SIGNALS for c, _ in panel[sig] + panel[sig + "_ctl"]})
+        n_ev = len({c for sig in SIGNALS for c, d in panel[sig] + panel[sig + "_ctl"] if d})
 
-    print(f"\n특징 시점 {args.as_of} · 라벨 창 +{args.within_days}일")
-    print(f"대상 {len(nodes):,}개사 · 관계 {len(edges):,} · "
-          f"창 안 부실 사건 {len(events):,}건 (그중 대상 내 {len(distressed & set(nodes)):,}사)\n")
+    label = "회사" if args.unit == "company" else "기업-연도"
+    print(f"\n{label} 관측 {n_obs:,} · 부실 {n_ev:,} · 시점 {len(points)}개")
+    if args.unit == "company-year" and len(points) > 1:
+        print("⚠️ 같은 회사가 여러 시점에 들어가 관측이 독립이 아니다 — p 값이 부풀려진다.")
+        print("   실측: 순환출자가 여기서는 ×4.18·p=0.0005 였지만 회사 단위로는 TOO_FEW.\n")
 
     for sig in SIGNALS:
-        have = [n in distressed for n in nodes if n in feats[sig]]
-        not_have = [n in distressed for n in nodes if n not in feats[sig]]
+        have = [d for _, d in panel[sig]]
+        not_have = [d for _, d in panel[sig + "_ctl"]]
         if not have or not not_have:
             print(f"  {sig:10s} 한쪽 군이 비어 검정 불가")
             continue
