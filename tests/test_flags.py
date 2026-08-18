@@ -269,3 +269,15 @@ def test_graph_baseline_flows_through_screen():
     edges = [("a", "b", R), ("b", "c", R), ("c", "a", R)]
     flags = screen(edges, "a", name=name, baseline={"cycles": DIST_CYCLES})
     assert any(f.summary.startswith(RARITY_RARE) for f in flags)
+
+
+def test_chokepoint_flag_states_it_is_not_a_risk_signal():
+    """신호 검정 결과를 항목에 박아둔다.
+
+    검정 없이 '이상 신호' 라고 부르면 사용자가 위험으로 읽는다. 실측은 반대였다 —
+    공동의존점에서 먼 회사가 부실률 2배(p=0.0007).
+    """
+    from dartweave.screen.flags import near_chokepoint
+    edges = [("a", "h", R)]
+    f = near_chokepoint(edges, "a", {"h": 3}, name=name)
+    assert "부실과 반대 방향" in f.summary
