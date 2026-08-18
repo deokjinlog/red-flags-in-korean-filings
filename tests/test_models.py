@@ -13,6 +13,9 @@ def test_all_tables_defined():
         "unresolved_mention",
         "relation_change",
         "contradiction",
+        # 시계열·신호 검정용 (append-only + 라벨) — db/asof.py 가 조회를 가둔다
+        "relation_fact",
+        "distress_event",
     }
 
 
