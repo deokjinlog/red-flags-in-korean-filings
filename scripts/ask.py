@@ -61,7 +61,7 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("question")
     p.add_argument("--hops", type=int, default=2)
-    p.add_argument("--graph", default="data/graph_closed.json")
+    p.add_argument("--graph", default="data/graph_listed.json")
     p.add_argument("--top", type=int, default=10)
     args = p.parse_args(argv)
 

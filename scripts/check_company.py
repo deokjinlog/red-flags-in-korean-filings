@@ -137,7 +137,7 @@ def fetch_fairtrade(corp_code: str, year: str) -> list[tuple[str, str]]:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--name", required=True, help="종목명 (예: 케이씨씨)")
-    p.add_argument("--graph", default="data/graph_closed.json")
+    p.add_argument("--graph", default="data/graph_listed.json")
     p.add_argument("--hops", type=int, default=2, help="공동 의존점 근접 판정 홉수")
     p.add_argument("--year", default="2024", help="지분율 조회 사업연도")
     p.add_argument("--explain", action="store_true",

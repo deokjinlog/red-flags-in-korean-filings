@@ -74,7 +74,7 @@
   <p>전자공시의 최대주주 현황과 타법인 출자 현황을 한 장의 그래프로 잇고, 그 위에서
      구조를 읽는다. 아래 숫자는 전부 실행 결과이며 예시가 아니다.</p>
   <div class="scope">
-    <span>기업 <b>1,490</b></span><span>지분 엣지 <b>1,892</b></span>
+    <span>기업 <b>8,974</b></span><span>지분 엣지 <b>12,201</b></span>
     <span>사업연도 <b>2024</b></span><span>검사 <b>6종</b></span>
     <span>테스트 <b>320</b></span><span>실행 <b>0.3초</b></span>
   </div>
@@ -170,12 +170,12 @@
       <thead><tr><th>항목</th><th class="n">0인 회사</th><th class="n">p95</th>
                  <th class="n">p99</th><th class="n">최대</th></tr></thead>
       <tbody>
-        <tr><td>순환출자 고리</td><td class="n">99.4%</td><td class="n">0</td>
-            <td class="n">0</td><td class="n">3</td></tr>
-        <tr><td>상호 지분 보유</td><td class="n">98.5%</td><td class="n">0</td>
-            <td class="n">1</td><td class="n">2</td></tr>
-        <tr class="mark"><td>2홉 내 공동의존점</td><td class="n">28.4%</td><td class="n">6</td>
-            <td class="n">8</td><td class="n">11</td></tr>
+        <tr><td>순환출자 고리</td><td class="n">98.3%</td><td class="n">0</td>
+            <td class="n">1</td><td class="n">65</td></tr>
+        <tr><td>상호 지분 보유</td><td class="n">96.1%</td><td class="n">0</td>
+            <td class="n">1</td><td class="n">4</td></tr>
+        <tr class="mark"><td>2홉 내 공동의존점</td><td class="n">62.7%</td><td class="n">5</td>
+            <td class="n">8</td><td class="n">12</td></tr>
         <tr><td>특수관계인 자금거래</td><td class="n">93.5%</td><td class="n">2</td>
             <td class="n">5</td><td class="n">7</td></tr>
         <tr><td>계열사 내부거래</td><td class="n">84.5%</td><td class="n">6</td>
@@ -183,9 +183,9 @@
       </tbody>
     </table>
   </div>
-  <p><strong>이 표가 검사 하나를 죽였다.</strong> 공동의존점 근접은 71.6%가 걸린다 — 등급 없이
-     "걸림" 만 표시하면 회사 10곳 중 7곳에 경고가 붙고, 그건 정의상 소음이다. 반대로
-     순환출자는 걸리는 것만으로 상위 0.6%다.</p>
+  <p><strong>기준선은 표본에 민감하다.</strong> 처음엔 대기업 44곳을 씨앗으로 만든 1,490개사에서
+     쟀는데, 상장사 전체로 넓히니 공동의존점 근접이 71.6% → 37.3%로 떨어졌다. 옛 표본이
+     허브 근처만 담고 있었던 것이다. 순환출자 최대는 3 → <strong>65</strong>로 뛰었다.</p>
   <p><strong>종합 점수는 만들지 않는다.</strong> 항목을 하나로 합치는 순간 "위험도 0.73"이 되고,
      그건 아무도 못 믿고 못 반박한다.</p>
 </section>
