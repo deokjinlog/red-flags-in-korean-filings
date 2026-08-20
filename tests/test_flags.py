@@ -310,3 +310,13 @@ def test_chokepoint_carries_the_measured_reversal():
     """반대 방향으로 확인된 건 '미검정' 이 아니라 그 결과를 적는다."""
     v = verification_of("공동의존점 근접")
     assert "반대 방향" in v and "미검정" not in v
+
+
+def test_conglomerate_membership_verification_is_recorded():
+    """처음으로 검정을 통과한 신호 — 방향까지 적어둔다.
+
+    소속이 위험한 게 아니라 **미소속이 위험한 쪽**이다(×2.73 · p=0.0020).
+    이름만 보고 반대로 읽지 않도록 결과를 문장으로 남긴다.
+    """
+    v = verification_of("대기업집단 미소속")
+    assert "2.73배" in v and "미검정" not in v
