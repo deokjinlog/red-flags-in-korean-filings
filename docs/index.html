@@ -76,7 +76,7 @@
   <div class="scope">
     <span>기업 <b>8,974</b></span><span>지분 엣지 <b>12,201</b></span>
     <span>사업연도 <b>2021~2024</b></span><span>관계 적재 <b>46,821</b></span>
-    <span>검사 <b>8종</b></span><span>테스트 <b>356</b></span>
+    <span>검사 <b>9종</b></span><span>테스트 <b>358</b></span>
   </div>
 </header>
 
@@ -248,12 +248,13 @@ out_degree      —    ×1.08  ×0.55  ×0.49     같은 방향 1/4</pre>
      채택된 하나는 구조가 아니라 재무에서 나왔다.</p>
   <div class="tablewrap">
     <table>
-      <caption>검사 8종 · 부실과 연관되는가</caption>
+      <caption>검사 9종 · 부실과 연관되는가</caption>
       <thead><tr><th>검사</th><th>검정 결과</th></tr></thead>
       <tbody>
         <tr class="mark"><td>결손금 (재무)</td>
-            <td><strong>채택</strong> — 기준시점 2개 × 통제 설정 7개 = 14개 조합
-                전부에서 유의 (×3.40~3.63)</td></tr>
+            <td><strong>채택</strong> — 14개 조합 전부에서 유의 (×3.70 / ×3.15)</td></tr>
+        <tr class="mark"><td>영업손실 (재무)</td>
+            <td><strong>채택</strong> — 14개 조합 전부에서 유의 (×2.13 / ×2.03)</td></tr>
         <tr><td>대기업집단과의 거리</td>
             <td><strong>채택 안 함</strong> — 통제하면 ×2.61 → ×1.29,
                 앞을 보면 기준시점마다 방향이 뒤집힘</td></tr>
@@ -313,27 +314,33 @@ out_degree      —    ×1.08  ×0.55  ×0.49     같은 방향 1/4</pre>
       <thead><tr><th>재무 신호</th><th class="n">해당</th><th class="n">이후 2년 부실률</th>
                  <th class="n">통제 후</th><th>판정</th></tr></thead>
       <tbody>
-        <tr class="mark"><td>결손금</td><td class="n">511</td><td class="n">5.09%</td>
-            <td class="n">×3.40</td><td>채택 · <strong>두 기준시점 모두</strong></td></tr>
-        <tr><td>부채비율 200% 초과</td><td class="n">295</td><td class="n">6.78%</td>
-            <td class="n">×4.59</td><td>채택 (2023 기준시점)</td></tr>
-        <tr><td>당기순손실</td><td class="n">647</td><td class="n">4.48%</td>
-            <td class="n">×2.50</td><td>채택 (2023 기준시점)</td></tr>
-        <tr><td>영업손실</td><td class="n">526</td><td class="n">4.18%</td>
-            <td class="n">×1.97</td><td>채택 (2023 기준시점)</td></tr>
+        <tr class="mark"><td>결손금</td><td class="n">519</td><td class="n">5.20%</td>
+            <td class="n">×3.15</td><td>채택 · <strong>두 기준시점 모두</strong></td></tr>
+        <tr class="mark"><td>영업손실</td><td class="n">537</td><td class="n">4.28%</td>
+            <td class="n">×2.03</td><td>채택 · <strong>두 기준시점 모두</strong></td></tr>
+        <tr><td>부채비율 200% 초과</td><td class="n">301</td><td class="n">6.64%</td>
+            <td class="n">×3.90</td><td>2022 기준시점은 표본 미달로 판정 보류</td></tr>
+        <tr><td>당기순손실</td><td class="n">657</td><td class="n">4.57%</td>
+            <td class="n">×2.59</td><td>기준시점에 따라 갈림 — 채택 안 함</td></tr>
       </tbody>
     </table>
   </div>
   <p><strong>잣대는 멀쩡했다.</strong> 같은 통제·같은 시점 분리·같은 보수적 채택 규칙을
      재무 신호는 통과한다. 지분 구조 <span class="num">7종 중 0종</span>,
-     재무 <span class="num">5종 중 1종</span>(두 기준시점 모두 통과한 결손금).</p>
-  <p>그래서 도구에 결손금 검사를 넣었다 — 이 저장소에서 유일하게 "검정됨 · 채택" 을
-     달고 나오는 항목이다.</p>
-<pre>[결손금] 2023년 이익잉여금이 마이너스 — 누적 결손 5,389억
-    결손 기업의 이후 2년 부실률 실측 5.1~5.5% (전체 2.6~2.7% · 통제 후 ×3.4~3.6)
-    └ <b>채택</b> · 기준시점 2개 × 통제 설정 7개 = 14개 조합 전부에서 유의</pre>
+     재무 <span class="num">5종 중 2종</span>(두 기준시점 모두 통과한 결손금·영업손실).</p>
+<pre>[결손금] 2023년 이익잉여금이 마이너스 — 누적 결손 1,333억
+    결손 기업의 이후 2년 부실률 실측 5.2~6.1% (전체 2.7~2.9% · 통제 후 ×3.2~3.7)
+    └ <b>채택</b> · 기준시점 2개 × 통제 설정 7개 = 14개 조합 전부에서 유의
+
+[영업손실] 2023년 영업이익이 마이너스 — 영업손실 575억
+    영업손실 기업의 이후 2년 부실률 실측 4.3~5.2% (전체 2.7~2.9% · 통제 후 ×2.0~2.1)
+    └ <b>채택</b> · 결손금보다 배율은 낮다</pre>
   <p>구조로 부실을 예고하려던 시도는 실패했다. 그 실패는 재무 대조군이 있어야
      "우리 방법이 틀렸다" 가 아니라 <strong>"구조에 그 신호가 없다"</strong> 로 말할 수 있다.</p>
+  <p><strong>재무를 알고 나서도 구조가 뭔가 보태는가</strong> — 결손금 여부를 층에 넣고
+     구조를 다시 검정했다. 2022년 기준시점에서는 <span class="num">×0.89~0.94</span> 로
+     아무것도 안 얹고, 2023년에는 <span class="num">×1.76~2.19</span> 로 얹는 것처럼
+     보인다. 또 갈린다. 흑자 기업 안에서는 방향까지 뒤집힌다.</p>
 </section>
 
 <section>

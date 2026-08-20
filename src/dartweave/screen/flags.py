@@ -27,8 +27,12 @@ NEAR_HOPS = 2      # 공동 의존점까지 몇 홉이면 '물려 있다' 로 �
 # 우리는 후자를 아직 대부분 모른다.
 VERIFICATION: dict[str, str] = {
     "결손금": (
-        "**채택** · 이 저장소에서 유일하게 검정을 통과한 신호다. 기준시점 2개 × 규모·업종 "
-        "통제 설정 7개 = 14개 조합 **전부**에서 유의 (최보수 ×3.63 p=0.0005 / ×3.40 p=0.0002)"
+        "**채택** · 기준시점 2개 × 규모·업종 통제 설정 7개 = 14개 조합 **전부**에서 유의 "
+        "(최보수 ×3.70 p=0.0002 / ×3.15 p=0.0002)"
+    ),
+    "영업손실": (
+        "**채택** · 14개 조합 전부에서 유의 (최보수 ×2.13 p=0.0077 / ×2.03 p=0.0124) — "
+        "결손금보다 배율은 낮다"
     ),
     "공동의존점 근접":
         "검정됨 · 부실과 **반대 방향** (먼 쪽이 2배 · p=0.0007, 감사의견 라벨로도 ×0.50)",
@@ -376,11 +380,11 @@ def conglomerate_distance(
 def accumulated_deficit(retained: float | None, *, year: str = "") -> Flag | None:
     """결손금 — 누적 이익잉여금이 마이너스.
 
-    **이 저장소에서 유일하게 검정을 통과한 신호다.** 지분 구조 검사 7종은 교란을
-    통제하면 전부 사라지는데, 이건 기준시점을 바꾸고 통제를 촘촘히 해도 남는다:
+    **가장 강한 신호다.** 지분 구조 검사 7종은 교란을 통제하면 전부 사라지는데,
+    이건 기준시점을 바꾸고 통제를 촘촘히 해도 남는다:
 
-      T=2022-06-30 · 2021년 재무   해당 415사 · 이후 2년 부실 5.54%   ×3.63 · p=0.0005
-      T=2023-06-30 · 2022년 재무   해당 511사 · 이후 2년 부실 5.09%   ×3.40 · p=0.0002
+      T=2022-06-30 · 2021년 재무   해당 463사 · 이후 2년 부실 6.05%   ×3.70 · p=0.0002
+      T=2023-06-30 · 2022년 재무   해당 519사 · 이후 2년 부실 5.20%   ×3.15 · p=0.0002
 
     두 시점 모두 규모(자산총계) × 업종 통제 설정 7개 **전부**에서 유의했다. 구조
     신호가 떨어진 게 잣대가 빡세서가 아니라는 뜻이기도 하다 — 같은 잣대를 통과한다.
@@ -394,8 +398,33 @@ def accumulated_deficit(retained: float | None, *, year: str = "") -> Flag | Non
         kind="결손금",
         summary=f"{label}이익잉여금이 마이너스 — 누적 결손 "
                 f"{abs(retained) / 1e8:,.0f}억",
-        evidence=[f"결손 기업의 이후 2년 부실률 실측 5.1~5.5% "
-                  f"(전체 2.6~2.7% · 규모·업종 통제 후 ×3.4~3.6)"],
+        evidence=["결손 기업의 이후 2년 부실률 실측 5.2~6.1% "
+                  "(전체 2.7~2.9% · 규모·업종 통제 후 ×3.2~3.7)"],
+    )
+
+
+def operating_loss(op_income: float | None, *, year: str = "") -> Flag | None:
+    """영업손실 — 본업에서 돈을 못 벌었다.
+
+    결손금 다음으로 강한 신호이고, 역시 두 기준시점 × 통제 설정 7개 전부에서 유의했다:
+
+      T=2022-06-30 · 2021년 재무   해당 462사 · 이후 2년 부실 5.19%   ×2.13 · p=0.0077
+      T=2023-06-30 · 2022년 재무   해당 537사 · 이후 2년 부실 4.28%   ×2.03 · p=0.0124
+
+    결손금과 겹치지만 같지는 않다 — 결손금은 **누적**이고 이건 **당해**다. 오래
+    벌어둔 회사가 한 해 적자를 낸 경우는 영업손실만 걸린다.
+
+    당기순손실은 같은 틀에서 기준시점에 따라 갈렸다(2022 탈락 · 2023 채택). 영업외
+    손익이 섞여 흔들리는 것으로 보고 검사에 넣지 않는다.
+    """
+    if op_income is None or op_income >= 0:
+        return None
+    label = f"{year}년 " if year else ""
+    return Flag(
+        kind="영업손실",
+        summary=f"{label}영업이익이 마이너스 — 영업손실 {abs(op_income) / 1e8:,.0f}억",
+        evidence=["영업손실 기업의 이후 2년 부실률 실측 4.3~5.2% "
+                  "(전체 2.7~2.9% · 규모·업종 통제 후 ×2.0~2.1)"],
     )
 
 
@@ -410,6 +439,7 @@ def screen(
     baseline: dict[str, dict[str, float]] | None = None,
     conglomerate_members: set[str] | None = None,
     retained_earnings: float | None = None,
+    operating_income: float | None = None,
     fiscal_year: str = "",
 ) -> list[Flag]:
     """걸리는 것만 모아서 돌려준다. 빈 목록은 '이상 없음' 이 아니라 **'이 검사들에는
@@ -425,6 +455,7 @@ def screen(
         conglomerate_distance(edges, corp_code, conglomerate_members or set(),
                               name=name),
         accumulated_deficit(retained_earnings, year=fiscal_year),
+        operating_loss(operating_income, year=fiscal_year),
     ]
     out: list[Flag] = []
     for f in found:

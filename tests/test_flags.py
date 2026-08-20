@@ -350,10 +350,11 @@ def test_no_member_list_means_no_judgement():
     assert conglomerate_distance([("a", "b", R)], "a", set(), name=name) is None
 
 
-def test_accumulated_deficit_is_the_only_adopted_signal():
-    """검정을 통과한 유일한 신호 — 검정 상태에 '채택' 이 박혀 있어야 한다."""
-    v = verification_of("결손금")
-    assert "채택" in v and "미검정" not in v and "×3.63" in v
+def test_adopted_financial_signals_say_so():
+    """검정을 통과한 둘 — 검정 상태에 '채택' 이 박혀 있어야 한다."""
+    for kind, ratio in (("결손금", "×3.70"), ("영업손실", "×2.13")):
+        v = verification_of(kind)
+        assert "채택" in v and "미검정" not in v and ratio in v
 
 
 def test_accumulated_deficit_fires_only_on_negative_retained_earnings():
@@ -375,4 +376,20 @@ def test_deficit_summary_carries_the_measured_rate():
 
     f = accumulated_deficit(-1_000_000_000_000, year="2022")
     assert f and "2022년" in f.summary and "10,000억" in f.summary
-    assert any("5.1~5.5%" in e for e in f.evidence)
+    assert any("5.2~6.1%" in e for e in f.evidence)
+
+
+def test_operating_loss_fires_only_on_negative_operating_income():
+    from dartweave.screen.flags import operating_loss
+
+    assert operating_loss(-50_000_000_000, year="2022") is not None
+    assert operating_loss(50_000_000_000) is None
+    assert operating_loss(None) is None       # 모르는 건 '흑자' 가 아니다
+
+
+def test_deficit_and_operating_loss_are_separate_checks():
+    """누적(결손금)과 당해(영업손실)는 겹치지만 같지 않다 — 따로 걸려야 한다."""
+    from dartweave.screen.flags import accumulated_deficit, operating_loss
+
+    assert accumulated_deficit(1_000_000_000) is None    # 누적은 흑자인데
+    assert operating_loss(-1_000_000_000) is not None    # 올해만 적자
