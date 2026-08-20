@@ -281,3 +281,32 @@ def test_chokepoint_flag_states_it_is_not_a_risk_signal():
     edges = [("a", "h", R)]
     f = near_chokepoint(edges, "a", {"h": 3}, name=name)
     assert "부실과 반대 방향" in f.summary
+
+
+# --- 검정 상태를 항목마다 달고 다닌다 ------------------------------------------
+
+from dartweave.screen.flags import VERIFICATION, verification_of  # noqa: E402
+
+
+def test_every_check_kind_has_a_verification_entry():
+    """검사를 추가하면서 검정 상태를 안 적으면 사용자가 '확인된 위험' 으로 읽는다."""
+    kinds = {"상호 지분 보유", "순환출자", "공동의존점 근접", "계열 경계 초과",
+             "특수관계인 자금거래", "계열사 내부거래"}
+    assert kinds <= set(VERIFICATION)
+
+
+def test_unknown_kind_defaults_to_unverified():
+    """모르는 항목을 조용히 통과시키지 않는다 — 기본값이 '미검정' 이다."""
+    assert "미검정" in verification_of("새로 만든 검사")
+
+
+def test_screen_attaches_verification_to_evidence():
+    edges = [("a", "b", R), ("b", "a", R)]
+    f = screen(edges, "a", name=name)[0]
+    assert any("미검정" in line for line in f.evidence)
+
+
+def test_chokepoint_carries_the_measured_reversal():
+    """반대 방향으로 확인된 건 '미검정' 이 아니라 그 결과를 적는다."""
+    v = verification_of("공동의존점 근접")
+    assert "반대 방향" in v and "미검정" not in v

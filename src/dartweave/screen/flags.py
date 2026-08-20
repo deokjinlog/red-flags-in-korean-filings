@@ -20,9 +20,30 @@ from dataclasses import dataclass, field
 MAX_CYCLE_LEN = 6  # 공정거래법상 순환출자 규제도 현실적으로 짧은 고리를 본다
 NEAR_HOPS = 2      # 공동 의존점까지 몇 홉이면 '물려 있다' 로 볼 것인가
 
-# 신호 검정 결과를 항목 자체에 박아둔다. 검정 없이 "이상 신호" 라고 부르면
-# 사용자가 위험으로 읽는다 — 실측은 반대 방향이었다.
+# 검정 상태를 항목마다 달고 다닌다. 검정 없이 "이상 신호" 라고 부르면 사용자가
+# 위험으로 읽는다 — 실제로 검정해보니 셋 중 둘이 반대 방향이었다.
+#
+# 이 표가 이 도구의 정직성이다. 걸렸다는 것과 위험하다는 것은 다른 말이고,
+# 우리는 후자를 아직 대부분 모른다.
+VERIFICATION: dict[str, str] = {
+    "공동의존점 근접":
+        "검정됨 · 부실과 **반대 방향** (먼 쪽이 2배 · p=0.0007, 감사의견 라벨로도 ×0.50)",
+    "순환출자":
+        "**미검정** · 보유 1.7% × 부실 1% = 교집합 0.017% 라 표본이 구조적으로 부족",
+    "상호 지분 보유":
+        "**미검정** · 신호군 부실 10건으로 최소 기준 20건 미달",
+    "계열 경계 초과":
+        "**미검정** · 공정위 집단 라벨이 20개뿐이라 신호군을 만들 수 없음",
+    "특수관계인 자금거래": "**미검정**",
+    "계열사 내부거래": "**미검정**",
+}
+
 NOT_A_RISK_NOTE = "부실과 반대 방향(검정: 먼 쪽이 2배, p=0.0007)"
+
+
+def verification_of(kind: str) -> str:
+    """이 검사가 부실과 연관되는지 확인됐는가. 모르면 모른다고 적는다."""
+    return VERIFICATION.get(kind, "**미검정**")
 
 # ⚠️ 임의값이다. 실측에서 이게 없어 사고가 났다 — 삼양사가 태영건설을 **0.06%**
 # 보유한 걸 "상호출자" 로 경고했다. 단순투자와 지배목적을 가르는 공식 기준은 없고,
@@ -307,7 +328,15 @@ def screen(
                         dist=b.get("near_chokepoint")),
         crosses_group_boundary(edges, corp_code, group_of or {}, name=name),
     ]
-    return [f for f in found if f is not None]
+    out: list[Flag] = []
+    for f in found:
+        if f is None:
+            continue
+        # 검정 상태를 붙여 내보낸다 — 걸렸다는 것과 위험하다는 것은 다른 말이다.
+        out.append(Flag(kind=f.kind,
+                        summary=f.summary,
+                        evidence=[*f.evidence, f"└ {verification_of(f.kind)}"]))
+    return out
 
 
 # 공정위 공시(pblntf_ty=J)에서 오는 신호. 본문을 안 읽어도 **공시 종류와 건수**만으로
