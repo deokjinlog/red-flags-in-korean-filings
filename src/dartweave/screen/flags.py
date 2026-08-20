@@ -34,9 +34,9 @@ VERIFICATION: dict[str, str] = {
         "**미검정** · 신호군 부실 10건으로 최소 기준 20건 미달",
     "계열 경계 초과":
         "**미검정** · 공정위 집단명이 DART 에 없어 신호군을 만들 수 없음",
-    "대기업집단 미소속":
-        "검정됨 · **미소속이 감사의견 문제 2.73배** (4.8% vs 1.8% · p=0.0020) — "
-        "소속이 위험한 게 아니라 **미소속이 위험한 쪽**이다",
+    "대기업집단과의 거리":
+        "검정됨 · 소속 1.8% → 연결 3.2% → 고립 7.7% (단조 · p=0.0002) — "
+        "**가까울수록 감사의견 문제가 적다.** 소속이 위험한 게 아니라 고립이 위험한 쪽",
     "특수관계인 자금거래": "**미검정**",
     "계열사 내부거래": "**미검정**",
 }
@@ -310,6 +310,43 @@ def crosses_group_boundary(
     )
 
 
+def conglomerate_distance(
+    edges: list[tuple[str, str, str]],
+    corp_code: str,
+    members: set[str],
+    *,
+    name=str,
+) -> Flag | None:
+    """대기업집단과의 거리 — 소속 / 연결 / 고립.
+
+    검정 결과(그래프 안 상장사 2,508사 · 감사의견 라벨):
+      소속 1.8% → 미소속·연결 3.2% → 미소속·고립 7.7%  (단조 · p=0.0002)
+
+    **가까울수록 문제가 적다.** 그래서 걸리는 건 '소속' 이 아니라 **'고립'** 이다 —
+    이름을 반대로 읽지 않도록 검정 결과를 요약에 싣는다.
+
+    `members` 가 비면 판정하지 않는다. 모르는 걸 '고립' 으로 세면 거의 모든 회사가 걸린다.
+    """
+    if not members:
+        return None
+    if corp_code in members:
+        return None                      # 소속은 가장 안전한 쪽 — 경고하지 않는다
+    neighbours = {b for a, b, _ in edges if a == corp_code}
+    neighbours |= {a for a, b, _ in edges if b == corp_code}
+    linked = sorted(neighbours & members)
+    if linked:
+        return Flag(
+            kind="대기업집단과의 거리",
+            summary=f"미소속이지만 소속사 {len(linked)}곳과 연결 (실측 문제율 3.2%)",
+            evidence=[name(c) for c in linked[:5]],
+        )
+    return Flag(
+        kind="대기업집단과의 거리",
+        summary="고립 — 대기업집단과 지분 연결 없음 (실측 문제율 7.7% · 소속사의 4.3배)",
+        evidence=[f"{name(corp_code)} 의 지분 상대 {len(neighbours)}곳 중 대기업집단 소속 0곳"],
+    )
+
+
 def screen(
     edges: list[tuple[str, str, str]],
     corp_code: str,
@@ -319,6 +356,7 @@ def screen(
     group_of: dict[str, str] | None = None,
     share_of: dict[tuple[str, str], float] | None = None,
     baseline: dict[str, dict[str, float]] | None = None,
+    conglomerate_members: set[str] | None = None,
 ) -> list[Flag]:
     """걸리는 것만 모아서 돌려준다. 빈 목록은 '이상 없음' 이 아니라 **'이 검사들에는
     안 걸렸음'** 이다 — 검사 범위 밖의 위험은 이 함수가 모른다."""
@@ -330,6 +368,8 @@ def screen(
         near_chokepoint(edges, corp_code, chokepoints or {}, name=name,
                         dist=b.get("near_chokepoint")),
         crosses_group_boundary(edges, corp_code, group_of or {}, name=name),
+        conglomerate_distance(edges, corp_code, conglomerate_members or set(),
+                              name=name),
     ]
     out: list[Flag] = []
     for f in found:

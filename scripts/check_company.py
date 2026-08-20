@@ -187,6 +187,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  지분율 조회   {len(shares)}건 · 대상 {len(to_fetch)}개사 "
               f"({args.year} 사업보고서)")
 
+    mp = Path("data/conglomerate_members.json")
+    members = set(json.loads(mp.read_text(encoding="utf-8"))["members"]) if mp.exists() else set()
+    if members:
+        print(f"  대기업집단   소속 명단 {len(members):,}사 "
+              f"({'소속' if code in members else '미소속'})")
+
     gbp = Path("data/baseline_graph.json")
     gbase = json.loads(gbp.read_text(encoding="utf-8")) if gbp.exists() else {}
     if gbase:
@@ -197,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
         group_of=group_of,
         share_of=shares,
         baseline=gbase,
+        conglomerate_members=members,
     )
 
     if not args.no_fetch:

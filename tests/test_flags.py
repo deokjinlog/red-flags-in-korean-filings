@@ -291,7 +291,7 @@ from dartweave.screen.flags import VERIFICATION, verification_of  # noqa: E402
 def test_every_check_kind_has_a_verification_entry():
     """검사를 추가하면서 검정 상태를 안 적으면 사용자가 '확인된 위험' 으로 읽는다."""
     kinds = {"상호 지분 보유", "순환출자", "공동의존점 근접", "계열 경계 초과",
-             "특수관계인 자금거래", "계열사 내부거래"}
+             "특수관계인 자금거래", "계열사 내부거래", "대기업집단과의 거리"}
     assert kinds <= set(VERIFICATION)
 
 
@@ -312,11 +312,38 @@ def test_chokepoint_carries_the_measured_reversal():
     assert "반대 방향" in v and "미검정" not in v
 
 
-def test_conglomerate_membership_verification_is_recorded():
+def test_conglomerate_distance_verification_is_recorded():
     """처음으로 검정을 통과한 신호 — 방향까지 적어둔다.
 
-    소속이 위험한 게 아니라 **미소속이 위험한 쪽**이다(×2.73 · p=0.0020).
-    이름만 보고 반대로 읽지 않도록 결과를 문장으로 남긴다.
+    소속 1.8% → 연결 3.2% → 고립 7.7% 로 단조 증가한다(p=0.0002).
+    걸리는 건 '소속' 이 아니라 '고립' 이다 — 이름만 보고 반대로 읽으면 안 된다.
     """
-    v = verification_of("대기업집단 미소속")
-    assert "2.73배" in v and "미검정" not in v
+    v = verification_of("대기업집단과의 거리")
+    assert "7.7%" in v and "미검정" not in v
+
+
+def test_conglomerate_member_is_not_flagged():
+    """소속은 가장 안전한 쪽이다 — 경고를 달면 안 된다."""
+    from dartweave.screen.flags import conglomerate_distance
+    edges = [("a", "b", R)]
+    assert conglomerate_distance(edges, "a", {"a", "b"}, name=name) is None
+
+
+def test_linked_non_member_says_it_is_linked():
+    from dartweave.screen.flags import conglomerate_distance
+    edges = [("a", "b", R)]
+    f = conglomerate_distance(edges, "a", {"b"}, name=name)
+    assert f and "연결" in f.summary and "나회사" in f.evidence
+
+
+def test_isolated_company_is_the_one_that_fires():
+    from dartweave.screen.flags import conglomerate_distance
+    edges = [("a", "b", R)]
+    f = conglomerate_distance(edges, "a", {"zzz"}, name=name)
+    assert f and "고립" in f.summary and "4.3배" in f.summary
+
+
+def test_no_member_list_means_no_judgement():
+    """명단이 없으면 판정하지 않는다 — 모르는 걸 '고립' 으로 세면 전부 걸린다."""
+    from dartweave.screen.flags import conglomerate_distance
+    assert conglomerate_distance([("a", "b", R)], "a", set(), name=name) is None
