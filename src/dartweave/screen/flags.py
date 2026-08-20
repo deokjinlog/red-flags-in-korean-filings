@@ -26,6 +26,10 @@ NEAR_HOPS = 2      # 공동 의존점까지 몇 홉이면 '물려 있다' 로 �
 # 이 표가 이 도구의 정직성이다. 걸렸다는 것과 위험하다는 것은 다른 말이고,
 # 우리는 후자를 아직 대부분 모른다.
 VERIFICATION: dict[str, str] = {
+    "결손금": (
+        "**채택** · 이 저장소에서 유일하게 검정을 통과한 신호다. 기준시점 2개 × 규모·업종 "
+        "통제 설정 7개 = 14개 조합 **전부**에서 유의 (최보수 ×3.63 p=0.0005 / ×3.40 p=0.0002)"
+    ),
     "공동의존점 근접":
         "검정됨 · 부실과 **반대 방향** (먼 쪽이 2배 · p=0.0007, 감사의견 라벨로도 ×0.50)",
     "순환출자":
@@ -369,6 +373,32 @@ def conglomerate_distance(
     )
 
 
+def accumulated_deficit(retained: float | None, *, year: str = "") -> Flag | None:
+    """결손금 — 누적 이익잉여금이 마이너스.
+
+    **이 저장소에서 유일하게 검정을 통과한 신호다.** 지분 구조 검사 7종은 교란을
+    통제하면 전부 사라지는데, 이건 기준시점을 바꾸고 통제를 촘촘히 해도 남는다:
+
+      T=2022-06-30 · 2021년 재무   해당 415사 · 이후 2년 부실 5.54%   ×3.63 · p=0.0005
+      T=2023-06-30 · 2022년 재무   해당 511사 · 이후 2년 부실 5.09%   ×3.40 · p=0.0002
+
+    두 시점 모두 규모(자산총계) × 업종 통제 설정 7개 **전부**에서 유의했다. 구조
+    신호가 떨어진 게 잣대가 빡세서가 아니라는 뜻이기도 하다 — 같은 잣대를 통과한다.
+
+    `retained` 가 None 이면 판정하지 않는다. 재무를 못 받은 걸 '흑자' 로 세지 않는다.
+    """
+    if retained is None or retained >= 0:
+        return None
+    label = f"{year}년 " if year else ""
+    return Flag(
+        kind="결손금",
+        summary=f"{label}이익잉여금이 마이너스 — 누적 결손 "
+                f"{abs(retained) / 1e8:,.0f}억",
+        evidence=[f"결손 기업의 이후 2년 부실률 실측 5.1~5.5% "
+                  f"(전체 2.6~2.7% · 규모·업종 통제 후 ×3.4~3.6)"],
+    )
+
+
 def screen(
     edges: list[tuple[str, str, str]],
     corp_code: str,
@@ -379,6 +409,8 @@ def screen(
     share_of: dict[tuple[str, str], float] | None = None,
     baseline: dict[str, dict[str, float]] | None = None,
     conglomerate_members: set[str] | None = None,
+    retained_earnings: float | None = None,
+    fiscal_year: str = "",
 ) -> list[Flag]:
     """걸리는 것만 모아서 돌려준다. 빈 목록은 '이상 없음' 이 아니라 **'이 검사들에는
     안 걸렸음'** 이다 — 검사 범위 밖의 위험은 이 함수가 모른다."""
@@ -392,6 +424,7 @@ def screen(
         crosses_group_boundary(edges, corp_code, group_of or {}, name=name),
         conglomerate_distance(edges, corp_code, conglomerate_members or set(),
                               name=name),
+        accumulated_deficit(retained_earnings, year=fiscal_year),
     ]
     out: list[Flag] = []
     for f in found:

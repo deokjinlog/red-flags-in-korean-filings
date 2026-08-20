@@ -76,7 +76,7 @@
   <div class="scope">
     <span>기업 <b>8,974</b></span><span>지분 엣지 <b>12,201</b></span>
     <span>사업연도 <b>2021~2024</b></span><span>관계 적재 <b>46,821</b></span>
-    <span>검사 <b>7종</b></span><span>테스트 <b>352</b></span>
+    <span>검사 <b>8종</b></span><span>테스트 <b>356</b></span>
   </div>
 </header>
 
@@ -242,15 +242,19 @@ out_degree      —    ×1.08  ×0.55  ×0.49     같은 방향 1/4</pre>
 <section>
   <span class="kind">정직성</span>
   <h2>모든 검사가 자기 검증 상태를 달고 나온다</h2>
-  <p>걸렸다는 것과 위험하다는 것은 다른 말이다. <strong>7종 중 채택된 건 하나도 없다.</strong>
-     하나는 교란을 통제하니 사라졌고, 하나는 오히려 <strong>반대 방향</strong>이었으며,
-     나머지 다섯은 표본이 부족해 판정 자체를 못 했다.</p>
+  <p>걸렸다는 것과 위험하다는 것은 다른 말이다. <strong>지분 구조 7종 중 채택된 건 하나도
+     없다.</strong> 하나는 교란을 통제하니 사라졌고, 하나는 오히려
+     <strong>반대 방향</strong>이었으며, 나머지 다섯은 표본이 부족해 판정 자체를 못 했다.
+     채택된 하나는 구조가 아니라 재무에서 나왔다.</p>
   <div class="tablewrap">
     <table>
-      <caption>검사 7종 · 부실과 연관되는가</caption>
+      <caption>검사 8종 · 부실과 연관되는가</caption>
       <thead><tr><th>검사</th><th>검정 결과</th></tr></thead>
       <tbody>
-        <tr class="mark"><td>대기업집단과의 거리</td>
+        <tr class="mark"><td>결손금 (재무)</td>
+            <td><strong>채택</strong> — 기준시점 2개 × 통제 설정 7개 = 14개 조합
+                전부에서 유의 (×3.40~3.63)</td></tr>
+        <tr><td>대기업집단과의 거리</td>
             <td><strong>채택 안 함</strong> — 통제하면 ×2.61 → ×1.29,
                 앞을 보면 기준시점마다 방향이 뒤집힘</td></tr>
         <tr><td>공동의존점 근접</td>
@@ -294,6 +298,42 @@ out_degree      —    ×1.08  ×0.55  ×0.49     같은 방향 1/4</pre>
      공시를 많이 내는 회사일수록 문제도 많이 걸리며(탐지 편향), <strong>그래프에 아예
      없는 회사가 오히려 문제가 적다</strong>(2.2% vs 6.6% · 커버리지 편향).
      셋을 다 통제하고 그래프 안에서만 비교한 결과가 위 표다.</p>
+</section>
+
+<section>
+  <span class="kind">대조군</span>
+  <h2>그러면 잣대가 너무 빡센 건가</h2>
+  <p>구조 신호 7종이 전부 떨어지고 나면 질문이 하나 남는다. <strong>잣대가 너무 빡센
+     건가, 아니면 구조에 정말 신호가 없는 건가.</strong> 재무 신호를 <strong>같은 틀에</strong>
+     넣으면 답이 나온다 — 재무는 교과서적으로 부실을 예고한다고 알려져 있으니, 이게
+     통과하면 잣대는 멀쩡한 것이다.</p>
+  <div class="tablewrap">
+    <table>
+      <caption>같은 시점 분리 · 같은 규모×업종 통제 · 같은 최보수 채택 규칙</caption>
+      <thead><tr><th>재무 신호</th><th class="n">해당</th><th class="n">이후 2년 부실률</th>
+                 <th class="n">통제 후</th><th>판정</th></tr></thead>
+      <tbody>
+        <tr class="mark"><td>결손금</td><td class="n">511</td><td class="n">5.09%</td>
+            <td class="n">×3.40</td><td>채택 · <strong>두 기준시점 모두</strong></td></tr>
+        <tr><td>부채비율 200% 초과</td><td class="n">295</td><td class="n">6.78%</td>
+            <td class="n">×4.59</td><td>채택 (2023 기준시점)</td></tr>
+        <tr><td>당기순손실</td><td class="n">647</td><td class="n">4.48%</td>
+            <td class="n">×2.50</td><td>채택 (2023 기준시점)</td></tr>
+        <tr><td>영업손실</td><td class="n">526</td><td class="n">4.18%</td>
+            <td class="n">×1.97</td><td>채택 (2023 기준시점)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><strong>잣대는 멀쩡했다.</strong> 같은 통제·같은 시점 분리·같은 보수적 채택 규칙을
+     재무 신호는 통과한다. 지분 구조 <span class="num">7종 중 0종</span>,
+     재무 <span class="num">5종 중 1종</span>(두 기준시점 모두 통과한 결손금).</p>
+  <p>그래서 도구에 결손금 검사를 넣었다 — 이 저장소에서 유일하게 "검정됨 · 채택" 을
+     달고 나오는 항목이다.</p>
+<pre>[결손금] 2023년 이익잉여금이 마이너스 — 누적 결손 5,389억
+    결손 기업의 이후 2년 부실률 실측 5.1~5.5% (전체 2.6~2.7% · 통제 후 ×3.4~3.6)
+    └ <b>채택</b> · 기준시점 2개 × 통제 설정 7개 = 14개 조합 전부에서 유의</pre>
+  <p>구조로 부실을 예고하려던 시도는 실패했다. 그 실패는 재무 대조군이 있어야
+     "우리 방법이 틀렸다" 가 아니라 <strong>"구조에 그 신호가 없다"</strong> 로 말할 수 있다.</p>
 </section>
 
 <section>

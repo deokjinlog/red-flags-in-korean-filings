@@ -348,3 +348,31 @@ def test_no_member_list_means_no_judgement():
     """명단이 없으면 판정하지 않는다 — 모르는 걸 '고립' 으로 세면 전부 걸린다."""
     from dartweave.screen.flags import conglomerate_distance
     assert conglomerate_distance([("a", "b", R)], "a", set(), name=name) is None
+
+
+def test_accumulated_deficit_is_the_only_adopted_signal():
+    """검정을 통과한 유일한 신호 — 검정 상태에 '채택' 이 박혀 있어야 한다."""
+    v = verification_of("결손금")
+    assert "채택" in v and "미검정" not in v and "×3.63" in v
+
+
+def test_accumulated_deficit_fires_only_on_negative_retained_earnings():
+    from dartweave.screen.flags import accumulated_deficit
+
+    assert accumulated_deficit(-1_200_000_000_000, year="2023") is not None
+    assert accumulated_deficit(500_000_000_000) is None
+
+
+def test_missing_financials_are_not_counted_as_healthy():
+    """재무를 못 받은 걸 '흑자' 로 세면 안 된다 — 모르는 건 판정하지 않는다."""
+    from dartweave.screen.flags import accumulated_deficit
+
+    assert accumulated_deficit(None) is None
+
+
+def test_deficit_summary_carries_the_measured_rate():
+    from dartweave.screen.flags import accumulated_deficit
+
+    f = accumulated_deficit(-1_000_000_000_000, year="2022")
+    assert f and "2022년" in f.summary and "10,000억" in f.summary
+    assert any("5.1~5.5%" in e for e in f.evidence)

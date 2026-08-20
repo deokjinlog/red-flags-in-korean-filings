@@ -193,6 +193,19 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  대기업집단   소속 명단 {len(members):,}사 "
               f"({'소속' if code in members else '미소속'})")
 
+    # 재무 — 이 도구에서 유일하게 검정을 통과한 신호가 여기서 나온다.
+    retained, fiscal_year = None, ""
+    fp = Path("data/fin_by_year.json")
+    if fp.exists():
+        fin = json.loads(fp.read_text(encoding="utf-8"))
+        for y in sorted(fin, reverse=True):
+            acc = fin[y].get(code) or {}
+            if "이익잉여금" in acc:
+                retained, fiscal_year = float(acc["이익잉여금"]), y
+                break
+        print(f"  재무          {fiscal_year or '없음'}"
+              f"{f' 사업연도 · 이익잉여금 {retained / 1e8:,.0f}억' if retained is not None else ''}")
+
     gbp = Path("data/baseline_graph.json")
     gbase = json.loads(gbp.read_text(encoding="utf-8")) if gbp.exists() else {}
     if gbase:
@@ -204,6 +217,8 @@ def main(argv: list[str] | None = None) -> int:
         share_of=shares,
         baseline=gbase,
         conglomerate_members=members,
+        retained_earnings=retained,
+        fiscal_year=fiscal_year,
     )
 
     if not args.no_fetch:
@@ -243,7 +258,8 @@ def main(argv: list[str] | None = None) -> int:
         print("모델 출력은 interpret() 를 거쳐야 한다 — 이 토큰 밖의 숫자나 "
               "기업명이 나오면 HallucinationDetected 로 중단된다.")
 
-    print("\n검사 범위 — 지분 관계 + 공정위 공시. 재무제표는 아직 안 본다.")
+    print("\n검사 범위 — 지분 관계 + 공정위 공시 + 주요계정(이익잉여금). "
+          "손익 추세와 현금흐름은 아직 안 본다.")
     print("이 도구는 매수·매도를 말하지 않는다. 걸린 것과 그 근거만 낸다.\n")
     return 0
 
