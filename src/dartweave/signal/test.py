@@ -85,3 +85,66 @@ def permutation_test(
     p = (hits + 1) / (runs + 1)   # +1 보정 — p=0 은 "불가능" 이 아니라 "못 봤다" 다
     verdict = Verdict.SUPPORTED if p < 0.05 else Verdict.NO_DIFFERENCE
     return SignalResult(verdict, sn, se, cn, ce, p, runs)
+
+
+def stratified_permutation_test(
+    strata: list[tuple[list[bool], list[bool]]], *, runs: int = DEFAULT_RUNS, seed: int = 1
+) -> SignalResult:
+    """층을 보존한 채 합쳐서 검정한다 (Mantel-Haenszel 형).
+
+    왜 필요한가:
+      교란을 통제하려고 층을 쪼개면 층마다 표본이 1/N 로 줄어 검정력이 죽는다.
+      실측에서 자산총계 4층 층화가 정확히 그랬다 — 방향은 4개 층 전부 유지인데
+      층별 p 는 0.14~0.15 로 전부 유의하지 않았다. 층을 합치되 **층을 넘어서는
+      비교는 하지 않아야** 통제를 유지한 채 검정력을 되찾는다.
+
+    어떻게:
+      순열을 층 안에서만 돌린다. 신호군/비신호군 라벨을 같은 층 안에서 섞으므로,
+      섞은 뒤에도 각 층의 규모 구성은 그대로다. 통계량은 층별 관측 사례수에서
+      기댓값을 뺀 것의 합 — 층 크기가 큰 쪽이 결론을 지배하지 않는다.
+
+    돌려주는 배율은 MH 결합 위험비다. 층별 배율을 층 크기로 가중해 합친 값이라
+    단순 합산 비율(교란이 그대로 남는다)과 다르다.
+    """
+    usable = [(s, c) for s, c in strata if s and c]
+    sn = sum(len(s) for s, _ in usable)
+    cn = sum(len(c) for _, c in usable)
+    se = sum(sum(s) for s, _ in usable)
+    ce = sum(sum(c) for _, c in usable)
+    if se < MIN_POSITIVES:
+        return SignalResult(Verdict.TOO_FEW, sn, se, cn, ce, None, 0)
+
+    def statistic(pairs: list[tuple[list[bool], list[bool]]]) -> float:
+        total = 0.0
+        for s, c in pairs:
+            n1, n = len(s), len(s) + len(c)
+            total += sum(s) - n1 * (sum(s) + sum(c)) / n
+        return total
+
+    observed = statistic(usable)
+    rng = random.Random(seed)
+    pools = [(s + c, len(s)) for s, c in usable]
+    hits = 0
+    for _ in range(runs):
+        shuffled = []
+        for pool, n1 in pools:
+            rng.shuffle(pool)
+            shuffled.append((pool[:n1], pool[n1:]))
+        if statistic(shuffled) >= observed:
+            hits += 1
+    p = (hits + 1) / (runs + 1)
+    verdict = Verdict.SUPPORTED if p < 0.05 else Verdict.NO_DIFFERENCE
+    return SignalResult(verdict, sn, se, cn, ce, p, runs)
+
+
+def mantel_haenszel_ratio(strata: list[tuple[list[bool], list[bool]]]) -> float | None:
+    """층 크기로 가중한 결합 위험비. 층을 무시한 단순 배율과 비교하려고 따로 낸다."""
+    num = den = 0.0
+    for s, c in strata:
+        n1, n0 = len(s), len(c)
+        n = n1 + n0
+        if not n1 or not n0:
+            continue
+        num += sum(s) * n0 / n
+        den += sum(c) * n1 / n
+    return num / den if den else None

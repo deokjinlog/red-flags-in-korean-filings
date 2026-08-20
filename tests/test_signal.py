@@ -3,7 +3,15 @@
 층1이 모듈러리티에 절대 기준을 안 쓴 것과 같은 규율이다. "신호군 부실률 12%" 는
 그 자체로 아무 뜻이 없다 — 비신호군이 몇 %인지가 있어야 판단이 된다.
 """
-from dartweave.signal.test import MIN_POSITIVES, Verdict, permutation_test
+import pytest
+
+from dartweave.signal.test import (
+    MIN_POSITIVES,
+    Verdict,
+    mantel_haenszel_ratio,
+    permutation_test,
+    stratified_permutation_test,
+)
 
 
 def _grp(events, n):
@@ -76,3 +84,47 @@ def test_min_positives_guard_is_what_caught_it():
     """복제로 부풀린 결과를 막은 건 MIN_POSITIVES 가드였다."""
     assert permutation_test(_grp(19, 100), _grp(5, 500), runs=200).verdict is Verdict.TOO_FEW
     assert permutation_test(_grp(20, 100), _grp(5, 500), runs=200).verdict is not Verdict.TOO_FEW
+
+
+def test_stratified_test_kills_a_pure_confound():
+    """층 안에서는 차이가 0 인데 층 구성만 다른 경우 — 단순 비교는 속고 층화는 안 속는다.
+
+    실측 재현: 고립군은 작은 회사에 몰려 있다. 작은 회사가 원래 문제가 많으니
+    층을 무시하면 고립이 위험해 보인다. 층 안에서 보면 차이가 사라져야 한다.
+    """
+    small = (_grp(30, 300), _grp(10, 100))    # 작은 회사 층 — 양쪽 다 10%
+    large = (_grp(2, 200), _grp(6, 600))      # 큰 회사 층 — 양쪽 다 1%
+    strata = [small, large]
+
+    naive = permutation_test(small[0] + large[0], small[1] + large[1], runs=500)
+    assert naive.lift is not None and naive.lift > 2.5   # 층을 무시하면 2.8배로 보인다
+
+    combined = stratified_permutation_test(strata, runs=500)
+    assert combined.verdict is Verdict.NO_DIFFERENCE
+    assert abs(mantel_haenszel_ratio(strata) - 1.0) < 0.01   # 통제하면 1배
+
+
+def test_stratified_test_keeps_a_real_effect():
+    """층마다 같은 방향의 진짜 효과가 있으면 합쳐서 살아난다."""
+    strata = [(_grp(20, 100), _grp(5, 100)), (_grp(20, 100), _grp(5, 100))]
+    r = stratified_permutation_test(strata, runs=500)
+    assert r.verdict is Verdict.SUPPORTED
+    assert mantel_haenszel_ratio(strata) == pytest.approx(4.0, abs=0.01)
+
+
+def test_stratified_test_recovers_power_that_splitting_destroys():
+    """층을 쪼개면 층별로는 유의하지 않은데 합치면 유의해진다 — 실측이 그랬다.
+
+    자산총계 4층 층화에서 방향은 4개 층 전부 유지인데 층별 p 는 0.14~0.15 였다.
+    층을 보존한 채 합치니 p=0.02 로 판정이 나왔다.
+    """
+    strata = [(_grp(9, 100), _grp(3, 100)) for _ in range(4)]
+    for sig, ctl in strata:
+        assert permutation_test(sig, ctl, runs=500).verdict is Verdict.TOO_FEW
+    assert stratified_permutation_test(strata, runs=500).verdict is Verdict.SUPPORTED
+
+
+def test_stratified_test_refuses_when_signal_positives_are_too_few():
+    """합쳐도 신호군 양성이 20건 미만이면 판정하지 않는다 — 단일 검정과 같은 가드."""
+    strata = [(_grp(5, 100), _grp(2, 100)) for _ in range(3)]
+    assert stratified_permutation_test(strata, runs=200).verdict is Verdict.TOO_FEW

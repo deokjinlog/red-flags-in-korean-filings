@@ -315,11 +315,12 @@ def test_chokepoint_carries_the_measured_reversal():
 def test_conglomerate_distance_verification_is_recorded():
     """처음으로 검정을 통과한 신호 — 방향까지 적어둔다.
 
-    소속 1.8% → 연결 3.2% → 고립 7.7% 로 단조 증가한다(p=0.0002).
+    고립 6.8% vs 나머지 2.6% 인데, 자산총계로 규모를 통제하면 ×1.69 (p=0.021) 로 준다.
+    겉보기 배율을 그대로 실으면 규모 차이를 신호로 파는 셈이라 통제 후 값을 싣는다.
     걸리는 건 '소속' 이 아니라 '고립' 이다 — 이름만 보고 반대로 읽으면 안 된다.
     """
     v = verification_of("대기업집단과의 거리")
-    assert "7.7%" in v and "미검정" not in v
+    assert "×1.69" in v and "미검정" not in v
 
 
 def test_conglomerate_member_is_not_flagged():
@@ -340,7 +341,7 @@ def test_isolated_company_is_the_one_that_fires():
     from dartweave.screen.flags import conglomerate_distance
     edges = [("a", "b", R)]
     f = conglomerate_distance(edges, "a", {"zzz"}, name=name)
-    assert f and "고립" in f.summary and "4.3배" in f.summary
+    assert f and "고립" in f.summary and "×1.69" in f.summary
 
 
 def test_no_member_list_means_no_judgement():
