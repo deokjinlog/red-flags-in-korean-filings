@@ -30,21 +30,34 @@ from dartweave.config import Settings
 from dartweave.dart.client import DartClient
 from dartweave.dart.status import Action, classify
 
-OUT = Path("data/assets.json")
-RAW = Path("data/financials.json")
+OUT = Path("data/assets.json")               # 당기 자산총계 (평면)
+BY_YEAR = Path("data/assets_by_year.json")   # 연도 → 회사 → 자산총계
 
 
-def pick_assets(rows: list[dict]) -> float | None:
-    """자산총계를 고른다. 연결 우선, 없으면 개별."""
-    best: dict[str, float] = {}
+TERMS = {"thstrm_amount": 0, "frmtrm_amount": -1, "bfefrmtrm_amount": -2}
+
+
+def pick_assets(rows: list[dict], year: int) -> dict[str, float]:
+    """연도별 자산총계. 연결 우선, 없으면 개별.
+
+    한 번 호출에 당기·전기·전전기가 온다. 셋 다 저장해야 **시점 분리**가 된다 —
+    2022년 6월 기준으로 예측하면서 2023년 자산으로 층을 나누면 미래를 보는 것이다.
+    """
+    best: dict[tuple[str, str], float] = {}
     for it in rows:
         if str(it.get("account_nm", "")).replace(" ", "") != "자산총계":
             continue
-        amount = re.sub(r"[^\d-]", "", str(it.get("thstrm_amount", "")))
-        if not amount or amount == "-":
-            continue
-        best[str(it.get("fs_div", ""))] = float(amount)
-    return best.get("CFS") or best.get("OFS")
+        fs = str(it.get("fs_div", ""))
+        for key, offset in TERMS.items():
+            amount = re.sub(r"[^\d-]", "", str(it.get(key, "")))
+            if not amount or amount == "-":
+                continue
+            best[(fs, str(year + offset))] = float(amount)
+    out: dict[str, float] = {}
+    for (fs, y), v in best.items():
+        if fs == "CFS" or y not in out:
+            out[y] = v
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -64,6 +77,9 @@ def main(argv: list[str] | None = None) -> int:
     done: dict[str, float | None] = (
         json.loads(OUT.read_text(encoding="utf-8")) if OUT.exists() else {}
     )
+    by_year: dict[str, dict[str, float]] = (
+        json.loads(BY_YEAR.read_text(encoding="utf-8")) if BY_YEAR.exists() else {}
+    )
     todo = [c for c in codes if c not in done][: args.limit]
     if not todo:
         got = sum(1 for v in done.values() if v)
@@ -76,22 +92,29 @@ def main(argv: list[str] | None = None) -> int:
             r = client.get_json("fnlttSinglAcnt.json",
                                 {"corp_code": code, "bsns_year": args.year,
                                  "reprt_code": "11011"})
-            done[code] = (pick_assets(r.get("list") or [])
-                          if classify(str(r.get("status", ""))) is Action.OK else None)
+            terms = (pick_assets(r.get("list") or [], int(args.year))
+                     if classify(str(r.get("status", ""))) is Action.OK else {})
+            done[code] = terms.get(args.year)
+            for y, v in terms.items():
+                by_year.setdefault(y, {})[code] = v
             if i % 200 == 0:
                 OUT.write_text(json.dumps(done, ensure_ascii=False), encoding="utf-8")
+                BY_YEAR.write_text(json.dumps(by_year, ensure_ascii=False), encoding="utf-8")
                 print(f"  {i}/{len(todo)}", flush=True)
     finally:
         client.close()
         OUT.parent.mkdir(parents=True, exist_ok=True)
         OUT.write_text(json.dumps(done, ensure_ascii=False), encoding="utf-8")
+        BY_YEAR.write_text(json.dumps(by_year, ensure_ascii=False), encoding="utf-8")
 
     vals = sorted(v for v in done.values() if v)
     print(f"\n{len(done):,}개사 조회 · 자산총계 확보 {len(vals):,}사")
     if vals:
         mid = vals[len(vals) // 2]
         print(f"   중앙값 {mid / 1e8:,.0f}억 · 최대 {vals[-1] / 1e8:,.0f}억")
-    print(f"→ {OUT}")
+    for y in sorted(by_year):
+        print(f"   {y}년 {len(by_year[y]):,}사")
+    print(f"→ {OUT} · {BY_YEAR}")
     return 0
 
 
