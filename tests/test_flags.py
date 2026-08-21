@@ -352,12 +352,12 @@ def test_no_member_list_means_no_judgement():
 
 def test_adopted_financial_signals_say_so():
     """검정을 통과한 둘 — 검정 상태에 '채택' 이 박혀 있어야 한다."""
-    for kind, ratio in (("결손금", "×3.70"), ("영업손실", "×2.13")):
+    for kind, ratio in (("결손금", "×6.35"), ("영업손실", "×2.24"), ("당기순손실", "×3.21")):
         v = verification_of(kind)
         assert "채택" in v and "미검정" not in v and ratio in v
     # 약한 쪽도 is_adopted 로는 채택이어야 한다 — 검색이 이걸로 순서를 가른다.
     from dartweave.screen.flags import is_adopted
-    assert is_adopted("결손금") and is_adopted("영업손실")
+    assert all(is_adopted(k) for k in ("결손금", "영업손실", "당기순손실"))
 
 
 def test_accumulated_deficit_fires_only_on_negative_retained_earnings():
@@ -379,7 +379,7 @@ def test_deficit_summary_carries_the_measured_rate():
 
     f = accumulated_deficit(-1_000_000_000_000, year="2022")
     assert f and "2022년" in f.summary and "10,000억" in f.summary
-    assert any("5.2~6.1%" in e for e in f.evidence)
+    assert any("4.8~7.2%" in e for e in f.evidence)
 
 
 def test_operating_loss_fires_only_on_negative_operating_income():
@@ -412,8 +412,8 @@ def test_is_adopted_does_not_leak_withdrawn_checks():
 def test_operating_loss_is_labelled_weaker_than_deficit():
     """영업손실은 FDR 만 통과한다 — 결손금과 같은 강도로 팔면 안 된다."""
     strong, weak = verification_of("결손금"), verification_of("영업손실")
-    assert "Bonferroni 까지 통과" in strong
-    assert "FDR 만 통과" in weak and "채택(약)" in weak
+    assert "Bonferroni 통과" in strong
+    assert "Bonferroni 를 넘는 시점이 3개 중 1개뿐" in weak and "채택(약)" in weak
 
 
 def test_weak_adoption_still_counts_as_adopted():
@@ -428,8 +428,27 @@ def test_adopted_signals_carry_their_false_positive_burden():
     """×3.7 을 '망한다' 로 읽지 않게, 걸린 것 대부분이 무사하다는 사실을 같이 낸다."""
     from dartweave.screen.flags import accumulated_deficit, operating_loss
 
-    d = accumulated_deficit(-1_000_000_000)
-    o = operating_loss(-1_000_000_000)
-    assert any("아무 일도 없었다" in e for e in d.evidence)
-    assert any("아무 일도 없었다" in e for e in o.evidence)
-    assert any("절반" in e or "42~44%" in e for e in d.evidence + o.evidence)
+    from dartweave.screen.flags import net_loss
+
+    flags = [accumulated_deficit(-1_000_000_000), operating_loss(-1_000_000_000),
+             net_loss(-1_000_000_000)]
+    for f in flags:
+        assert any("아무 일도 없었다" in e for e in f.evidence)
+        assert any("실제 부실의" in e for e in f.evidence)
+
+
+def test_net_loss_is_the_widest_of_the_three():
+    """당기순손실은 셋 중 가장 넓게 건다 — 재현율 높고 정밀도 낮다."""
+    from dartweave.screen.flags import net_loss
+
+    assert net_loss(-30_000_000_000, year="2022") is not None
+    assert net_loss(30_000_000_000) is None
+    assert net_loss(None) is None
+    assert "32%가 여기 걸리고" in " ".join(net_loss(-1).evidence)
+
+
+def test_net_loss_records_that_an_earlier_verdict_was_wrong():
+    """표본을 그래프로 좁혀놔서 '시점에 따라 갈린다' 고 잘못 뺐던 신호다."""
+    from dartweave.screen.flags import net_loss
+
+    assert "그 판정이 틀렸다" in (net_loss.__doc__ or "")

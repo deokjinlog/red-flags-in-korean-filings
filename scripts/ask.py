@@ -85,10 +85,11 @@ def main(argv=None) -> int:
         for y in sorted(fin, reverse=True):
             acc = fin[y].get(code) or {}
             if "이익잉여금" in acc:
-                op = acc.get("영업이익")
+                op, ni = acc.get("영업이익"), acc.get("당기순이익(손실)")
                 return (float(acc["이익잉여금"]),
-                        float(op) if op is not None else None, y)
-        return None, None, ""
+                        float(op) if op is not None else None,
+                        float(ni) if ni is not None else None, y)
+        return None, None, None, ""
 
     print(f"\n질문  {args.question}")
     found = [(n, c) for n, c in find_companies(args.question, by_name) if c in in_graph]
@@ -109,10 +110,11 @@ def main(argv=None) -> int:
                         key=lambda c: -g.degree(g.vs.find(corp_code=c).index))
         shared = sorted(((nm(c), h, choke[c]) for c, h in d.items() if c in choke),
                         key=lambda x: (x[1], x[2]))
-        retained, op_income, year = financials(code)
+        retained, op_income, net, year = financials(code)
         flags = screen(edges, code, name=nm, chokepoints=choke, baseline=baseline,
                        conglomerate_members=members, retained_earnings=retained,
-                       operating_income=op_income, fiscal_year=year)
+                       operating_income=op_income, net_income=net,
+                       fiscal_year=year)
         # 채택된 것부터 낸다 — 순서가 곧 "무엇을 믿고 말할 수 있는가" 다.
         flags.sort(key=lambda f: not is_adopted(f.kind))
         entry = {

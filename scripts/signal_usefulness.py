@@ -20,18 +20,24 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from dartweave.db.asof import events_after, latest_edges_at
+from dartweave.db.asof import events_after
 from dartweave.signal.usefulness import lift_ci, usefulness
 
 SIGNALS = {
     "결손금": lambda a: float(a["이익잉여금"]) < 0,
     "영업손실": lambda a: a.get("영업이익") is not None and float(a["영업이익"]) < 0,
-    "둘 중 하나라도": lambda a: (float(a["이익잉여금"]) < 0
-                          or (a.get("영업이익") is not None
-                              and float(a["영업이익"]) < 0)),
-    "둘 다": lambda a: (float(a["이익잉여금"]) < 0
-                     and a.get("영업이익") is not None
-                     and float(a["영업이익"]) < 0),
+    "당기순손실": lambda a: (a.get("당기순이익(손실)") is not None
+                        and float(a["당기순이익(손실)"]) < 0),
+    "셋 중 하나라도": lambda a: any((
+        float(a["이익잉여금"]) < 0,
+        a.get("영업이익") is not None and float(a["영업이익"]) < 0,
+        a.get("당기순이익(손실)") is not None and float(a["당기순이익(손실)"]) < 0,
+    )),
+    "셋 다": lambda a: all((
+        float(a["이익잉여금"]) < 0,
+        a.get("영업이익") is not None and float(a["영업이익"]) < 0,
+        a.get("당기순이익(손실)") is not None and float(a["당기순이익(손실)"]) < 0,
+    )),
 }
 
 
@@ -51,12 +57,11 @@ def main(argv: list[str] | None = None) -> int:
         year = str(int(T[:4]) - 1)
         acc = fin.get(year, {})
         with Session(engine) as s:
-            latest = latest_edges_at(s, T)
             events = events_after(s, T, within_days=args.within_days)
-        nodes = {c for f in latest.values()
-                 for c in (f.source_corp_code, f.target_corp_code)}
         label = {e.corp_code for e in events if "해산" not in e.event_type}
-        pool = sorted(c for c in nodes if "이익잉여금" in (acc.get(c) or {}))
+        # 재무 신호에 그래프 소속을 요구하지 않는다 — 요구하면 DART 타법인출자 API 의
+        # 연도별 수록 편차가 표본을 좌우한다(2020 사업연도는 2021년의 3분의 1도 안 준다).
+        pool = sorted(c for c in acc if "이익잉여금" in (acc.get(c) or {}))
         labels = [c in label for c in pool]
 
         print(f"\n{'=' * 76}\nT={T} · {year}년 재무 · {len(pool):,}사 · "

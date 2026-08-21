@@ -11,7 +11,14 @@
   · 시점 분리 — 재무는 T 이전 사업연도, 라벨은 T 이후 730일 실제 부실
   · 회사 단위 — 기준시점을 합치지 않는다 (같은 회사를 두 번 세면 p 가 부풀려진다)
   · 교란 통제 — 자산 규모 × 업종 교차, 설정 8개를 흔들고 **가장 보수적인 답**을 채택
-  · 커버리지 — 그래프 안 상장사만 (밖은 문제율이 오히려 낮다)
+  · 커버리지 — 재무를 확보한 상장사 전부. **그래프 소속은 요구하지 않는다.**
+
+    처음엔 요구했다가 고쳤다. 감사의견 라벨에서 커버리지 편향(그래프 밖이 오히려
+    문제가 적다)을 겪은 게 남아서 그대로 옮겼는데, 재무 신호에 지분 그래프 소속을
+    요구할 이유가 없다. 그러면 **DART 타법인출자 API 의 연도별 수록 편차**가 표본을
+    좌우한다 — 실측으로 2019·2020 사업연도는 2021년의 3분의 1도 안 준다(삼성전자
+    타법인출자가 2021년 146행인데 2020년은 2행이다). 그래서 T=2021 기준시점의
+    표본이 통째로 부족해져 전부 판정 불가로 나왔다.
 
 사용:
     uv run python scripts/test_financial_signals.py
@@ -26,13 +33,13 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from dartweave.db.asof import events_after, latest_edges_at
+from dartweave.db.asof import events_after
 from dartweave.signal.test import (
     Verdict,
     mantel_haenszel_ratio,
     stratified_permutation_test,
 )
-from test_isolation_controlled import GRID, neighbours_of
+from test_isolation_controlled import GRID
 
 
 def _get(acc: dict, name: str) -> float | None:
@@ -106,15 +113,10 @@ def main(argv: list[str] | None = None) -> int:
         year = str(int(T[:4]) - 1)              # T 시점에 이미 공시된 마지막 사업연도
         acc_now, acc_prev = fin.get(year, {}), fin.get(str(int(year) - 1), {})
         with Session(engine) as s:
-            latest = latest_edges_at(s, T)
             events = events_after(s, T, within_days=args.within_days)
-        edges = [(f.source_corp_code, f.target_corp_code, f.rel_type)
-                 for f in latest.values()]
-        nb = neighbours_of(edges)
         label = {e.corp_code for e in events if "해산" not in e.event_type}
-
         feats = {c: features(acc_now[c], acc_prev.get(c, {}))
-                 for c in nb if c in acc_now and acc_now[c].get("자산총계")}
+                 for c in acc_now if acc_now[c].get("자산총계")}
         assets = {c: float(acc_now[c]["자산총계"]) for c in feats}
         pool = sorted(c for c in feats if c in industry)
 
@@ -143,12 +145,19 @@ def main(argv: list[str] | None = None) -> int:
                   f"×{plain:7.2f} ×{worst[0]:6.2f} {worst[1]:8.4f}  "
                   f"{'채택' if ok else '탈락'} ({sup}/7)")
 
-    print(f"\n{'=' * 74}\n두 기준시점 모두에서 채택된 신호:")
-    both = [k for k, v in verdicts.items() if len(v) == 2 and set(v) == {"채택"}]
-    print("  " + (", ".join(both) if both else "없음"))
+    n_dates = len([x for x in args.as_of.split(",") if x.strip()])
+    print(f"\n{'=' * 74}\n기준시점 {n_dates}개 **전부**에서 채택된 신호:")
+    # 한 시점이라도 판정을 못 했으면 '전부 채택' 이 아니다 — 보류를 통과로 세지 않는다.
+    always = [k for k, v in verdicts.items() if len(v) == n_dates and set(v) == {"채택"}]
+    print("  " + (", ".join(always) if always else "없음"))
     mixed = [k for k, v in verdicts.items() if len(set(v)) > 1]
     if mixed:
         print(f"  시점에 따라 갈린 신호: {', '.join(mixed)}")
+    partial = [k for k, v in verdicts.items()
+               if len(v) < n_dates and set(v) == {"채택"}]
+    if partial:
+        print(f"  판정이 난 시점에서는 전부 채택이지만 시점 수가 모자란 신호: "
+              f"{', '.join(f'{k}({len(verdicts[k])}/{n_dates})' for k in partial)}")
     return 0
 
 

@@ -194,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
               f"({'소속' if code in members else '미소속'})")
 
     # 재무 — 이 도구에서 유일하게 검정을 통과한 신호가 여기서 나온다.
-    retained, op_income, fiscal_year = None, None, ""
+    retained, op_income, net, fiscal_year = None, None, None, ""
     fp = Path("data/fin_by_year.json")
     if fp.exists():
         fin = json.loads(fp.read_text(encoding="utf-8"))
@@ -202,12 +202,14 @@ def main(argv: list[str] | None = None) -> int:
             acc = fin[y].get(code) or {}
             if "이익잉여금" in acc:
                 retained, fiscal_year = float(acc["이익잉여금"]), y
-                op = acc.get("영업이익")
+                op, ni = acc.get("영업이익"), acc.get("당기순이익(손실)")
                 op_income = float(op) if op is not None else None
+                net = float(ni) if ni is not None else None
                 break
         print(f"  재무          {fiscal_year or '없음'}"
               f"{f' 사업연도 · 이익잉여금 {retained / 1e8:,.0f}억' if retained is not None else ''}"
-              f"{f' · 영업이익 {op_income / 1e8:,.0f}억' if op_income is not None else ''}")
+              f"{f' · 영업이익 {op_income / 1e8:,.0f}억' if op_income is not None else ''}"
+              f"{f' · 당기순이익 {net / 1e8:,.0f}억' if net is not None else ''}")
 
     gbp = Path("data/baseline_graph.json")
     gbase = json.loads(gbp.read_text(encoding="utf-8")) if gbp.exists() else {}
@@ -222,6 +224,7 @@ def main(argv: list[str] | None = None) -> int:
         conglomerate_members=members,
         retained_earnings=retained,
         operating_income=op_income,
+        net_income=net,
         fiscal_year=fiscal_year,
     )
 
@@ -262,7 +265,7 @@ def main(argv: list[str] | None = None) -> int:
         print("모델 출력은 interpret() 를 거쳐야 한다 — 이 토큰 밖의 숫자나 "
               "기업명이 나오면 HallucinationDetected 로 중단된다.")
 
-    print("\n검사 범위 — 지분 관계 + 공정위 공시 + 주요계정(이익잉여금·영업이익). "
+    print("\n검사 범위 — 지분 관계 + 공정위 공시 + 주요계정(이익잉여금·영업이익·당기순이익). "
           "현금흐름과 손익 추세는 아직 안 본다.")
     print("이 도구는 매수·매도를 말하지 않는다. 걸린 것과 그 근거만 낸다.\n")
     return 0
