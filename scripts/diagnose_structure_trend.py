@@ -35,6 +35,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from dartweave.db.asof import CensoredWindowError, events_after, latest_edges_at
+from dartweave.signal.labels import is_distress
 from dartweave.signal.test import (
     mantel_haenszel_ratio,
     stratified_permutation_test,
@@ -107,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
         own = classify(latest, members)
         own_iso = {c for c, v in own.items() if v == "고립"}
-        label = {e.corp_code for e in events if "해산" not in e.event_type}
+        label = {e.corp_code for e in events if is_distress(e.event_type)}
         assets = by_year.get(str(int(T[:4]) - 1), {})
         base = sorted(c for c in own if c in assets and c in industry)
 
@@ -133,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
         except CensoredWindowError:
             continue
         own = classify(latest, members)
-        label = {e.corp_code for e in events if "해산" not in e.event_type}
+        label = {e.corp_code for e in events if is_distress(e.event_type)}
         assets = by_year.get(str(int(T[:4]) - 1), {})
         groups = defaultdict(list)
         for c, tag in own.items():

@@ -27,6 +27,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from dartweave.db.asof import CensoredWindowError, events_after, latest_edges_at
+from dartweave.signal.labels import is_distress
 from dartweave.signal.test import (
     Verdict,
     mantel_haenszel_ratio,
@@ -99,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {T} 건너뜀 — {e}")
             continue
         iso, nodes = isolated_set(latest, members)
-        label = {e.corp_code for e in events if "해산" not in e.event_type}
+        label = {e.corp_code for e in events if is_distress(e.event_type)}
         assets = by_year.get(str(int(T[:4]) - 1), {})
         pool = sorted(c for c in nodes if c in assets and c in industry)
         hit = label & set(pool)

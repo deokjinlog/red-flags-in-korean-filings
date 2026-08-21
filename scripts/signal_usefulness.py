@@ -21,6 +21,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from dartweave.db.asof import CensoredWindowError, events_after
+from dartweave.signal.labels import is_distress
 from dartweave.signal.usefulness import lift_ci, usefulness
 
 SIGNALS = {
@@ -64,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
                 # 대신 **조용히 포함시키지도 않는다** — 그게 배율 비교를 어긋나게 한다.
                 print(f"\n{'=' * 74}\nT={T} 건너뜀 — {e}")
                 continue
-        label = {e.corp_code for e in events if "해산" not in e.event_type}
+        label = {e.corp_code for e in events if is_distress(e.event_type)}
         # 재무 신호에 그래프 소속을 요구하지 않는다 — 요구하면 DART 타법인출자 API 의
         # 연도별 수록 편차가 표본을 좌우한다(2020 사업연도는 2021년의 3분의 1도 안 준다).
         pool = sorted(c for c in acc if "이익잉여금" in (acc.get(c) or {}))

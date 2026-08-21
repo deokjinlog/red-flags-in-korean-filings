@@ -352,7 +352,7 @@ def test_no_member_list_means_no_judgement():
 
 def test_adopted_financial_signals_say_so():
     """검정을 통과한 둘 — 검정 상태에 '채택' 이 박혀 있어야 한다."""
-    for kind, ratio in (("결손금", "×6.35"), ("영업손실", "×2.24"), ("당기순손실", "×3.37")):
+    for kind, ratio in (("결손금", "×6.78"), ("영업손실", "×2.44"), ("당기순손실", "×3.41")):
         v = verification_of(kind)
         assert "채택" in v and "미검정" not in v and ratio in v
     # 약한 쪽도 is_adopted 로는 채택이어야 한다 — 검색이 이걸로 순서를 가른다.
@@ -379,7 +379,7 @@ def test_deficit_summary_carries_the_measured_rate():
 
     f = accumulated_deficit(-1_000_000_000_000, year="2022")
     assert f and "2022년" in f.summary and "10,000억" in f.summary
-    assert any("6.0~7.2%" in e for e in f.evidence)
+    assert any("6.7~9.6%" in e for e in f.evidence)
 
 
 def test_operating_loss_fires_only_on_negative_operating_income():
@@ -413,7 +413,7 @@ def test_operating_loss_is_labelled_weaker_than_deficit():
     """영업손실은 FDR 만 통과한다 — 결손금과 같은 강도로 팔면 안 된다."""
     strong, weak = verification_of("결손금"), verification_of("영업손실")
     assert "Bonferroni 통과" in strong
-    assert "Bonferroni 를 넘는 시점이 4개 중 2개" in weak and "채택(약)" in weak
+    assert "Bonferroni 를 넘는 시점이 4개 중 3개" in weak and "채택(약)" in weak
 
 
 def test_weak_adoption_still_counts_as_adopted():
@@ -444,7 +444,7 @@ def test_net_loss_is_the_widest_of_the_three():
     assert net_loss(-30_000_000_000, year="2022") is not None
     assert net_loss(30_000_000_000) is None
     assert net_loss(None) is None
-    assert "30~36%가 여기 걸리고" in " ".join(net_loss(-1).evidence)
+    assert "30~38%가 여기 걸리고" in " ".join(net_loss(-1).evidence)
 
 
 def test_net_loss_records_that_an_earlier_verdict_was_wrong():

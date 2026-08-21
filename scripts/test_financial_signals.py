@@ -34,6 +34,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from dartweave.db.asof import CensoredWindowError, events_after
+from dartweave.signal.labels import is_distress
 from dartweave.signal.test import (
     Verdict,
     mantel_haenszel_ratio,
@@ -124,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
                 # 대신 **조용히 포함시키지도 않는다** — 그게 배율 비교를 어긋나게 한다.
                 print(f"\n{'=' * 74}\nT={T} 건너뜀 — {e}")
                 continue
-        label = {e.corp_code for e in events if "해산" not in e.event_type}
+        label = {e.corp_code for e in events if is_distress(e.event_type)}
         feats = {c: features(acc_now[c], acc_prev.get(c, {}))
                  for c in acc_now if acc_now[c].get("자산총계")}
         assets = {c: float(acc_now[c]["자산총계"]) for c in feats}

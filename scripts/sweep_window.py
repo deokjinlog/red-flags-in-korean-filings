@@ -27,6 +27,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from dartweave.db.asof import CensoredWindowError, events_after
+from dartweave.signal.labels import is_distress
 from dartweave.signal.test import (
     Verdict,
     mantel_haenszel_ratio,
@@ -64,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
                 for name in SIGNALS_ORDER:
                     tally[(name, W)].append("—")     # 절단은 빼고 센다
                 continue
-            label = {e.corp_code for e in events if "해산" not in e.event_type}
+            label = {e.corp_code for e in events if is_distress(e.event_type)}
             feats = {c: features(acc[c], prev.get(c, {}))
                      for c in acc if acc[c].get("자산총계")}
             assets = {c: float(acc[c]["자산총계"]) for c in feats}

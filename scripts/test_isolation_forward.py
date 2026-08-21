@@ -31,6 +31,7 @@ from dartweave.db.asof import (
     events_after,
     latest_edges_at,
 )
+from dartweave.signal.labels import is_distress
 from dartweave.signal.test import (
     Verdict,
     mantel_haenszel_ratio,
@@ -69,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
         edges = [(f.source_corp_code, f.target_corp_code, f.rel_type)
                  for f in latest.values()]
         nb = neighbours_of(edges)
-        label = {e.corp_code for e in events if "해산" not in e.event_type}
+        label = {e.corp_code for e in events if is_distress(e.event_type)}
         pool = sorted(c for c in nb if c in assets and c in industry)
         g = split(pool, members, nb)
 
