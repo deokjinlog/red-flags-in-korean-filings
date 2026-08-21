@@ -76,7 +76,7 @@
   <div class="scope">
     <span>기업 <b>8,974</b></span><span>지분 엣지 <b>12,201</b></span>
     <span>사업연도 <b>2021~2024</b></span><span>관계 적재 <b>46,821</b></span>
-    <span>검사 <b>9종</b></span><span>테스트 <b>366</b></span>
+    <span>검사 <b>9종</b></span><span>테스트 <b>373</b></span>
   </div>
 </header>
 
@@ -378,6 +378,39 @@ out_degree      —    ×1.08  ×0.55  ×0.49     같은 방향 1/4</pre>
   <p><strong>작은 p 가 곧 채택은 아니다.</strong> 차수(p=0.0003)와 공동의존점 근접
      (p=0.0007)은 보정을 통과하지만, 하나는 공시량 층화에서 무너졌고 하나는 방향이
      반대라 채택하지 않았다. 보정은 '우연히 작은 p' 만 걸러낼 뿐이다.</p>
+</section>
+
+<section>
+  <span class="kind">실용성</span>
+  <h2>유의한 것과 쓸 만한 것은 다른 말이다</h2>
+  <p>"결손금 ×3.7 · p=0.0002" 를 <strong>"결손금 있으면 망한다"</strong> 로 읽으면 완전히
+     틀린다. 배율은 기저율 위에서만 뜻이 있고, 기저율이 2.7% 면 ×3.7 은 5% 다.
+     <strong>5% 는 여전히 "대부분 아니다" 다.</strong></p>
+  <div class="tablewrap">
+    <table>
+      <caption>T=2023-06-30 · 2,067사 · 이후 2년 부실 55사 (기저율 2.7%)</caption>
+      <thead><tr><th>신호</th><th class="n">걸림</th><th class="n">정밀도</th>
+                 <th class="n">재현율</th><th>무사한 비율</th></tr></thead>
+      <tbody>
+        <tr class="mark"><td>결손금</td><td class="n">519 (25%)</td><td class="n">5.2%</td>
+            <td class="n">49%</td><td><strong>95%</strong></td></tr>
+        <tr><td>영업손실</td><td class="n">534 (26%)</td><td class="n">4.3%</td>
+            <td class="n">42%</td><td>96%</td></tr>
+        <tr><td>둘 중 하나라도</td><td class="n">711 (34%)</td><td class="n">4.5%</td>
+            <td class="n">58%</td><td>95%</td></tr>
+        <tr><td>둘 다</td><td class="n">342 (17%)</td><td class="n">5.3%</td>
+            <td class="n">33%</td><td>95%</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><strong>넓게 걸수록 많이 잡지만 정밀도는 안 오른다.</strong> 둘 중 하나로 넓히면
+     상장사 3분의 1이 걸리고 재현율이 58%로 오르는데 정밀도는 4.5% 다. 둘 다로 좁히면
+     정밀도가 5.3%로 겨우 오르고 재현율은 33%로 떨어진다. <strong>어느 조합도 "이 회사는
+     위험하다" 를 말할 만큼 정밀하지 않다.</strong></p>
+  <p class="note">여기 배율은 검정 쪽 ×3.70 과 분모가 다르다 — 검정은 신호군 대
+     비신호군(통제 후), 이건 신호군 대 전체(무통제). 답하는 질문이 다르다.</p>
+  <p>그래서 이 도구가 매수·매도를 말하지 않는다. 걸린 사실과 그 근거, 그리고
+     <strong>걸린 것의 대부분은 무사했다는 사실</strong>을 같이 낸다.</p>
 </section>
 
 <section>

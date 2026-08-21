@@ -422,3 +422,14 @@ def test_weak_adoption_still_counts_as_adopted():
 
     assert is_adopted("영업손실")
     assert not is_adopted("대기업집단과의 거리")
+
+
+def test_adopted_signals_carry_their_false_positive_burden():
+    """×3.7 을 '망한다' 로 읽지 않게, 걸린 것 대부분이 무사하다는 사실을 같이 낸다."""
+    from dartweave.screen.flags import accumulated_deficit, operating_loss
+
+    d = accumulated_deficit(-1_000_000_000)
+    o = operating_loss(-1_000_000_000)
+    assert any("아무 일도 없었다" in e for e in d.evidence)
+    assert any("아무 일도 없었다" in e for e in o.evidence)
+    assert any("절반" in e or "42~44%" in e for e in d.evidence + o.evidence)
