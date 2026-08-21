@@ -20,7 +20,7 @@ import argparse, json, sys
 from collections import deque
 from pathlib import Path
 
-from dartweave.screen.flags import screen
+from dartweave.screen.flags import is_adopted, screen
 from dartweave.structure.interpret import allowed_tokens, build_prompt
 from dartweave.structure.project import project
 
@@ -73,6 +73,23 @@ def main(argv=None) -> int:
     in_graph = {v for e in edges for v in e[:2]}
     nm = lambda c: names.get(c, c)
 
+    # 검정을 통과한 두 신호는 재무에서 나온다. 이걸 안 실으면 "사도 되나" 라는 질문에
+    # **떨어진 것만 답하고 통과한 건 빼놓는** 셈이 된다.
+    load = lambda p: (json.loads(Path(p).read_text(encoding="utf-8"))
+                      if Path(p).exists() else {})
+    members = set(load("data/conglomerate_members.json").get("members", []))
+    fin = load("data/fin_by_year.json")
+    baseline = load("data/baseline_graph.json")
+
+    def financials(code):
+        for y in sorted(fin, reverse=True):
+            acc = fin[y].get(code) or {}
+            if "이익잉여금" in acc:
+                op = acc.get("영업이익")
+                return (float(acc["이익잉여금"]),
+                        float(op) if op is not None else None, y)
+        return None, None, ""
+
     print(f"\n질문  {args.question}")
     found = [(n, c) for n, c in find_companies(args.question, by_name) if c in in_graph]
     if not found:
@@ -92,9 +109,12 @@ def main(argv=None) -> int:
                         key=lambda c: -g.degree(g.vs.find(corp_code=c).index))
         shared = sorted(((nm(c), h, choke[c]) for c, h in d.items() if c in choke),
                         key=lambda x: (x[1], x[2]))
-        flags = screen(edges, code, name=nm, chokepoints=choke,
-                       baseline=json.loads(Path("data/baseline_graph.json").read_text(
-                           encoding="utf-8")) if Path("data/baseline_graph.json").exists() else {})
+        retained, op_income, year = financials(code)
+        flags = screen(edges, code, name=nm, chokepoints=choke, baseline=baseline,
+                       conglomerate_members=members, retained_earnings=retained,
+                       operating_income=op_income, fiscal_year=year)
+        # 채택된 것부터 낸다 — 순서가 곧 "무엇을 믿고 말할 수 있는가" 다.
+        flags.sort(key=lambda f: not is_adopted(f.kind))
         entry = {
             "name": name_,
             "reach": {f"{h}홉": sum(1 for v in d.values() if v == h)
@@ -111,10 +131,22 @@ def main(argv=None) -> int:
         print(f"  직접 연결   {', '.join(entry['direct'][:8])}")
         if shared:
             print(f"  공동의존점  {' · '.join(entry['shared_chokepoints'][:3])}")
-        for f in flags:
-            print(f"  [{f.kind}] {f.summary}")
-            for line in f.evidence[:2]:
-                print(f"      {line}")
+        adopted = [f for f in flags if is_adopted(f.kind)]
+        rest = [f for f in flags if not is_adopted(f.kind)]
+        if adopted:
+            print("\n  ── 검정 통과 (이 둘만 부실과의 연관이 확인됐다) ──")
+            for f in adopted:
+                print(f"  [{f.kind}] {f.summary}")
+                for line in f.evidence[:2]:
+                    print(f"      {line}")
+        if rest:
+            print("\n  ── 걸렸지만 검정 미통과 (참고) ──")
+            for f in rest:
+                print(f"  [{f.kind}] {f.summary}")
+        if not adopted:
+            print("\n  ── 검정 통과한 항목 없음 ──")
+            print("  재무 신호(결손금·영업손실)에 안 걸렸다는 뜻이다. "
+                  "'안전' 이 아니라 '이 검사에는 안 걸림' 이다.")
 
     blob = json.dumps(payload, ensure_ascii=False)
     print(f"\n── 모델에 넘길 것 ──")

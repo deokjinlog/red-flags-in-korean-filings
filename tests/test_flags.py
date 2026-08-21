@@ -355,6 +355,9 @@ def test_adopted_financial_signals_say_so():
     for kind, ratio in (("결손금", "×3.70"), ("영업손실", "×2.13")):
         v = verification_of(kind)
         assert "채택" in v and "미검정" not in v and ratio in v
+    # 약한 쪽도 is_adopted 로는 채택이어야 한다 — 검색이 이걸로 순서를 가른다.
+    from dartweave.screen.flags import is_adopted
+    assert is_adopted("결손금") and is_adopted("영업손실")
 
 
 def test_accumulated_deficit_fires_only_on_negative_retained_earnings():
@@ -393,3 +396,29 @@ def test_deficit_and_operating_loss_are_separate_checks():
 
     assert accumulated_deficit(1_000_000_000) is None    # 누적은 흑자인데
     assert operating_loss(-1_000_000_000) is not None    # 올해만 적자
+
+
+def test_is_adopted_does_not_leak_withdrawn_checks():
+    """'채택 안 함' 이 '채택' 으로 새면 철회한 신호를 통과한 것처럼 판다."""
+    from dartweave.screen.flags import is_adopted
+
+    assert is_adopted("결손금") and is_adopted("영업손실")
+    assert not is_adopted("대기업집단과의 거리")     # 철회
+    assert not is_adopted("공동의존점 근접")         # 반대 방향
+    assert not is_adopted("순환출자")                # 미검정
+    assert not is_adopted("있지도 않은 검사")
+
+
+def test_operating_loss_is_labelled_weaker_than_deficit():
+    """영업손실은 FDR 만 통과한다 — 결손금과 같은 강도로 팔면 안 된다."""
+    strong, weak = verification_of("결손금"), verification_of("영업손실")
+    assert "Bonferroni 까지 통과" in strong
+    assert "FDR 만 통과" in weak and "채택(약)" in weak
+
+
+def test_weak_adoption_still_counts_as_adopted():
+    """'채택(약)' 은 채택이다 — 약한 것과 아닌 것은 다르다."""
+    from dartweave.screen.flags import is_adopted
+
+    assert is_adopted("영업손실")
+    assert not is_adopted("대기업집단과의 거리")
