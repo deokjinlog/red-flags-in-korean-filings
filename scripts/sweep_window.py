@@ -42,12 +42,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--as-of", default="20210630,20220630,20230630,20240630")
     p.add_argument("--windows", default="365,730,1095")
     p.add_argument("--fin", default="data/fin_by_year.json")
+    p.add_argument("--cash", default="data/cashflow_by_year.json")
     p.add_argument("--industry", default="data/industry.json")
     p.add_argument("--runs", type=int, default=8000)
     args = p.parse_args(argv)
 
     read = lambda f: json.loads(Path(f).read_text(encoding="utf-8"))  # noqa: E731
     fin = read(args.fin)
+    cash = read(args.cash) if Path(args.cash).exists() else {}
     industry = {k: str(v) for k, v in read(args.industry).items() if v}
     engine = create_engine(args.db)
     windows = [int(w) for w in args.windows.split(",") if w.strip()]
@@ -58,6 +60,7 @@ def main(argv: list[str] | None = None) -> int:
         for T in dates:
             year = str(int(T[:4]) - 1)
             acc, prev = fin.get(year, {}), fin.get(str(int(year) - 1), {})
+            cf = cash.get(year, {})
             try:
                 with Session(engine) as s:
                     events = events_after(s, T, within_days=W)
@@ -66,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
                     tally[(name, W)].append("—")     # 절단은 빼고 센다
                 continue
             label = {e.corp_code for e in events if is_distress(e.event_type)}
-            feats = {c: features(acc[c], prev.get(c, {}))
+            feats = {c: features(acc[c], prev.get(c, {}), cf.get(c, {}))
                      for c in acc if acc[c].get("자산총계")}
             assets = {c: float(acc[c]["자산총계"]) for c in feats}
             pool = sorted(c for c in feats if c in industry)

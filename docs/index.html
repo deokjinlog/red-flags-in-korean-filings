@@ -76,7 +76,7 @@
   <div class="scope">
     <span>기업 <b>8,974</b></span><span>지분 엣지 <b>12,201</b></span>
     <span>기준시점 <b>4개</b></span><span>부실 라벨 <b>685건</b></span>
-    <span>검사 <b>10종</b></span><span>테스트 <b>383</b></span>
+    <span>검사 <b>12종</b></span><span>테스트 <b>396</b></span>
   </div>
 </header>
 
@@ -255,15 +255,19 @@ out_degree      —    ×1.08  ×0.55  ×0.49     같은 방향 1/4</pre>
      채택된 하나는 구조가 아니라 재무에서 나왔다.</p>
   <div class="tablewrap">
     <table>
-      <caption>검사 10종 · 부실과 연관되는가</caption>
+      <caption>검사 12종 · 부실과 연관되는가</caption>
       <thead><tr><th>검사</th><th>검정 결과</th></tr></thead>
       <tbody>
         <tr class="mark"><td>결손금 (재무)</td>
             <td><strong>채택</strong> — 28개 조합 전부 유의 ·
-                <strong>네 시점 전부 Bonferroni 통과</strong></td></tr>
+                <strong>네 시점 전부 Bonferroni 통과 (여섯 중 유일)</strong></td></tr>
+        <tr class="mark"><td>이자보상배율 1 미만 (재무)</td>
+            <td><strong>채택</strong> — 28개 조합 전부 유의 · Bonferroni 4개 중 3개</td></tr>
         <tr class="mark"><td>당기순손실 (재무)</td>
             <td><strong>채택</strong> — 28개 조합 전부 유의 · Bonferroni 4개 중 3개</td></tr>
         <tr class="mark"><td>영업손실 (재무)</td>
+            <td><strong>채택</strong> — 28개 조합 전부 유의 · Bonferroni 4개 중 3개</td></tr>
+        <tr class="mark"><td>영업현금흐름 음수 (재무)</td>
             <td><strong>채택(약)</strong> — 28개 조합 전부 유의 · Bonferroni 4개 중 2개</td></tr>
         <tr><td>대기업집단과의 거리</td>
             <td><strong>채택 안 함</strong> — 네 시점 중 <strong>최근 둘에서만</strong>
@@ -339,27 +343,41 @@ out_degree      —    ×1.08  ×0.55  ×0.49     같은 방향 1/4</pre>
       <thead><tr><th>재무 신호</th><th class="n">T=2021</th><th class="n">T=2022</th>
                  <th class="n">T=2023</th><th class="n">T=2024</th><th>판정</th></tr></thead>
       <tbody>
-        <tr class="mark"><td>결손금</td><td class="n">×6.35</td><td class="n">×3.80</td>
-            <td class="n">×2.44</td><td class="n">×4.10</td>
+        <tr class="mark"><td>결손금</td><td class="n">×6.78</td><td class="n">×4.16</td>
+            <td class="n">×2.69</td><td class="n">×4.53</td>
             <td>채택 · <strong>네 시점 전부</strong></td></tr>
-        <tr class="mark"><td>당기순손실</td><td class="n">×3.21</td><td class="n">×2.02</td>
-            <td class="n">×2.45</td><td class="n">×3.37</td>
+        <tr class="mark"><td>이자보상배율 1 미만</td><td class="n">×3.44</td><td class="n">×3.32</td>
+            <td class="n">×1.82</td><td class="n">×3.70</td>
             <td>채택 · <strong>네 시점 전부</strong></td></tr>
-        <tr class="mark"><td>영업손실</td><td class="n">×2.24</td><td class="n">×2.83</td>
-            <td class="n">×1.87</td><td class="n">×2.92</td>
+        <tr class="mark"><td>당기순손실</td><td class="n">×3.41</td><td class="n">×2.27</td>
+            <td class="n">×2.43</td><td class="n">×4.03</td>
+            <td>채택 · <strong>네 시점 전부</strong></td></tr>
+        <tr class="mark"><td>영업손실</td><td class="n">×2.44</td><td class="n">×2.96</td>
+            <td class="n">×1.96</td><td class="n">×3.13</td>
+            <td>채택 · <strong>네 시점 전부</strong></td></tr>
+        <tr class="mark"><td>영업현금흐름 음수</td><td class="n">×2.01</td><td class="n">×2.16</td>
+            <td class="n">×1.96</td><td class="n">×3.78</td>
             <td>채택(약) · 네 시점 전부</td></tr>
-        <tr><td>부채비율 200% 초과</td><td class="n">표본 미달</td><td class="n">표본 미달</td>
-            <td class="n">×2.47</td><td class="n">×2.59</td>
-            <td>4개 중 2개만 판정 — 채택 안 함</td></tr>
-        <tr><td>매출 감소</td><td class="n">×1.38</td><td class="n">×1.54</td>
-            <td class="n">×1.71</td><td class="n">×0.91</td>
+        <tr><td>부채비율 200% 초과</td><td class="n">표본 미달</td><td class="n">×2.72</td>
+            <td class="n">×2.40</td><td class="n">×2.15</td>
+            <td>4개 중 3개만 판정 — 채택 안 함</td></tr>
+        <tr><td>자본잠식(완전+부분)</td><td class="n">표본 미달</td><td class="n">표본 미달</td>
+            <td class="n">표본 미달</td><td class="n">×5.01</td>
+            <td>부실률은 가장 높은데 해당 91~108사뿐</td></tr>
+        <tr><td>매출 감소</td><td class="n">×1.41</td><td class="n">×1.50</td>
+            <td class="n">×1.91</td><td class="n">×1.06</td>
             <td>시점에 따라 갈림</td></tr>
       </tbody>
     </table>
   </div>
   <p><strong>잣대는 멀쩡했다.</strong> 같은 통제·같은 시점 분리·같은 보수적 채택 규칙을
      재무 신호는 통과한다. 지분 구조 <span class="num">7종 중 0종</span>,
-     재무 <span class="num">5종 중 3종</span>.</p>
+     재무 <span class="num">8종 중 5종</span>.</p>
+  <p><strong>현금흐름과 이자보상배율은 따로 받아야 했다.</strong> 주요계정 API 에는 둘 다
+     없어서 전체 재무제표 API 로 계정 257개를 받고 <strong>IFRS <code>account_id</code></strong>
+     로 잡았다 — 제출사마다 "영업활동으로 인한 현금흐름" / "영업활동현금흐름" 처럼 다르게
+     쓴다. 이자비용은 실제로 나간 현금(이자의 지급)을 먼저 쓴다. 금융원가에는 외환차손·
+     파생상품평가손실이 섞여 배율을 실제보다 나쁘게 만든다.</p>
   <p><strong>여기서 내 실수 하나가 드러났다.</strong> 처음엔 재무 검정도 표본을
      "지분 그래프에 있는 회사" 로 좁혀놨다 — 감사의견 라벨에서 커버리지 편향을 겪은 게
      남아 그대로 옮긴 건데, 재무 신호에 지분 그래프 소속을 요구할 이유가 없다. 그러면
@@ -367,11 +385,19 @@ out_degree      —    ×1.08  ×0.55  ×0.49     같은 방향 1/4</pre>
      2020 사업연도는 2021년의 3분의 1도 안 준다(삼성전자 타법인출자가 2021년 146행인데
      2020년은 2행이다). 조건을 빼자 <strong>"시점에 따라 갈린다" 며 뺐던 당기순손실이
      세 시점 전부에서 재현됐다.</strong></p>
-<pre>[결손금] 2023년 이익잉여금이 마이너스 — 누적 결손 1,333억
-    결손 기업의 이후 2년 부실률 실측 4.8~7.2% (전체 2.6~3.1% · 통제 후 ×2.8~6.4)
-    다만 <b>결손 기업의 93~95%는 2년 안에 아무 일도 없었다</b> —
-    상장사의 26%가 여기 걸리고, 실제 부실의 48~67%를 잡는다
-    └ <b>채택</b> · 21개 조합 전부 유의 · 세 시점 전부 Bonferroni 통과</pre>
+<pre>$ ask.py "삼부토건 사도 되나?"        <i>← 2025-04 회생절차개시신청</i>
+
+── <b>검정 통과 (5건 · 부실과의 연관이 확인된 것만)</b> ──
+[결손금]            2023년 누적 결손 2,043억
+[영업손실]          2023년 영업손실 782억
+[당기순손실]         2023년 순손실 1,110억
+[영업현금흐름 음수]    2023년 유출 1,071억
+[이자보상배율 1 미만]  영업손실이라 이자 갚을 재원이 없다 (이자 93억)
+
+── 걸렸지만 검정 미통과 (참고) ──
+[대기업집단과의 거리] 고립 — 규모·업종을 맞추면 차이가 사라진다</pre>
+  <p>2023년 6월에 서서 이 다섯을 보고 "여기 걸렸다" 고 말할 수 있었고, 실제로 2년 안에
+     회생절차로 갔다. <strong>동시에 같은 신호에 걸린 나머지 90%는 아무 일도 없었다.</strong></p>
   <p>구조로 부실을 예고하려던 시도는 실패했다. 그 실패는 재무 대조군이 있어야
      "우리 방법이 틀렸다" 가 아니라 <strong>"구조에 그 신호가 없다"</strong> 로 말할 수 있다.</p>
   <p><strong>재무를 알고 나서도 구조가 뭔가 보태는가</strong> — 결손금 여부를 층에 넣고
@@ -390,29 +416,38 @@ out_degree      —    ×1.08  ×0.55  ×0.49     같은 방향 1/4</pre>
   <p>가족을 어떻게 묶느냐가 결론을 바꾼다. 설정까지 세면 156번인데, 통제 설정 8개는
      서로 다른 가설이 아니라 <strong>같은 가설의 민감도 스윕</strong>이고 우리는 이미
      그중 가장 보수적인 답만 쓴다. 세는 단위는 <strong>(신호 × 기준시점) 중 판정이
-     나온 것</strong> — 14개다.</p>
-<pre>가족 29개 · alpha=0.05 · Bonferroni 임계 p = 0.00172
+     나온 것</strong> — 35개다.</p>
+<pre>가족 35개 · alpha=0.05 · Bonferroni 임계 p = 0.00143
 
-  결손금 · T=2021            0.0001   Bonf ○  FDR ○   채택
-  결손금 · T=2022            0.0001   Bonf ○  FDR ○   채택
-  결손금 · T=2024            0.0001   Bonf ○  FDR ○   채택
+  결손금 · T=2021~2024       0.0001   Bonf ○  FDR ○   채택 (네 시점 전부)
+  이자보상배율<1 · T=2022·24   0.0001   Bonf ○  FDR ○   채택
+  영업현금흐름 음수 · T=2024      0.0001   Bonf ○  FDR ○   채택
   당기순손실 · T=2024          0.0001   Bonf ○  FDR ○   채택
   영업손실 · T=2024           0.0001   Bonf ○  FDR ○   채택
-  결손금 · T=2023            0.0002   Bonf ○  FDR ○   채택
-  차수(연결 수)                0.0003   Bonf ○  FDR ○   탈락 — 공시량 층화에서 무너짐
-  당기순손실 · T=2021          0.0005   Bonf ○  FDR ○   채택
-  당기순손실 · T=2023          0.0006   Bonf ○  FDR ○   채택
-  영업손실 · T=2022           0.0006   Bonf ○  FDR ○   채택
+  자본잠식(완전+부분) · T=2024   0.0001   Bonf ○  FDR ○   1시점만 판정 — 채택 안 함
+  당기순손실 · T=2021·23       0.0002   Bonf ○  FDR ○   채택
+  이자보상배율<1 · T=2021       0.0002   Bonf ○  FDR ○   채택
+  차수(연결 수)                0.0003   Bonf ○  FDR ○   탈락 — 층화에서 무너짐
   공동의존점 근접                0.0007   Bonf ○  FDR ○   탈락 — 방향이 반대
-  부채비율 200%↑ · T=2024     0.0017   Bonf ○  FDR ○   4시점 중 2시점뿐
-  영업손실 · T=2021           0.0024   Bonf ×  FDR ○   채택
-  당기순손실 · T=2022          0.0052   Bonf ×  FDR ○   채택
-  고립(부실 이벤트) · T=2024     0.0052   Bonf ×  FDR ○   최근 시점만 — 재현 안 됨
-  영업손실 · T=2023           0.0080   Bonf ×  FDR ○   채택
-  … 나머지 13건 전부 ×</pre>
-  <p><strong>세 신호의 강도가 다르다.</strong> 결손금은 네 시점 전부 Bonferroni를 넘고,
-     당기순손실은 4개 중 3개, 영업손실은 4개 중 2개다. 그래서 도구가 셋을 같은 강도로
-     팔지 않는다 — 영업손실만 <code>채택(약)</code> 으로 나온다.</p>
+  영업손실 · T=2021           0.0010   Bonf ○  FDR ○   채택
+  영업현금흐름 음수 · T=2022      0.0011   Bonf ○  FDR ○   채택
+  당기순손실 · T=2022          0.0016   Bonf ×  FDR ○   채택   ← 임계가 조여져 탈락
+  영업손실 · T=2023           0.0030   Bonf ×  FDR ○   채택
+  … 나머지 전부 ×</pre>
+  <p><strong>다섯 신호의 강도가 다르다.</strong> 네 시점 전부 Bonferroni를 넘는 건
+     <strong>결손금 하나뿐</strong>이고, 이자보상배율·당기순손실·영업손실은 4개 중 3개,
+     영업현금흐름은 4개 중 2개다. 그래서 도구가 다섯을 같은 강도로 팔지 않는다 —
+     영업현금흐름만 <code>채택(약)</code> 으로 나온다.</p>
+  <div class="verdict">
+    <div class="vhead"><span class="stamp">보정의 대가</span>
+      <b>더 재면 기존 결과가 약해진다</b></div>
+    <p>신호를 둘 더 검정하면서 가족이 <span class="num">26 → 35</span> 로 커졌다.
+       Bonferroni 임계가 <span class="num">0.00192 → 0.00143</span> 으로 조여졌고,
+       그 결과 <strong>기존 신호들의 등급이 같이 내려갔다</strong> — 당기순손실은 4/4 에서
+       3/4 가 됐다. 새로 잰 게 기존 결과를 약하게 만든 것이다.</p>
+    <p>버그가 아니라 보정의 정의다. 가족이 커지면 "그중 하나가 우연히 유의할" 확률이
+       커지니 임계를 조여야 한다. <strong>검정을 늘리는 데에는 값이 붙는다.</strong></p>
+  </div>
   <p><strong>작은 p 가 곧 채택은 아니다.</strong> 차수(p=0.0003)와 공동의존점 근접
      (p=0.0007)은 보정을 통과하지만, 하나는 공시량 층화에서 무너졌고 하나는 방향이
      반대라 채택하지 않았다. 보정은 '우연히 작은 p' 만 걸러낼 뿐이다.</p>
@@ -459,7 +494,7 @@ out_degree      —    ×1.08  ×0.55  ×0.49     같은 방향 1/4</pre>
      <strong>5% 는 여전히 "대부분 아니다" 다.</strong></p>
   <div class="tablewrap">
     <table>
-      <caption>T=2024-06-30 · 2,246사 · 이후 2년 부실 73사 (기저율 3.3%)</caption>
+      <caption>T=2024-06-30 · 2,246사 · 이후 2년 부실 91사 (기저율 4.1%)</caption>
       <thead><tr><th>신호</th><th class="n">걸림</th><th class="n">정밀도</th>
                  <th class="n">재현율</th><th>무사한 비율</th></tr></thead>
       <tbody>
@@ -477,10 +512,10 @@ out_degree      —    ×1.08  ×0.55  ×0.49     같은 방향 1/4</pre>
     </table>
   </div>
   <p><strong>넓게 걸수록 많이 잡지만 정밀도는 안 오른다.</strong> 셋 중 하나로 넓히면
-     상장사의 46%가 걸리고 재현율이 73%까지 오르는데 정밀도는 5.2%로 오히려 떨어진다.
-     셋 다로 좁히면 정밀도가 8.5%로 오르지만 재현율이 47%로 반토막 난다.
+     상장사의 46%가 걸리고 재현율이 78%까지 오르는데 정밀도는 6.9%로 오히려 떨어진다.
+     셋 다로 좁히면 정밀도가 11.3%로 오르지만 재현율이 49%로 반토막 난다.
      <strong>어느 조합도 "이 회사는 위험하다" 를 말할 만큼 정밀하지 않다</strong> —
-     가장 정밀한 조합조차 걸린 것의 91%가 무사했다.</p>
+     가장 정밀한 조합조차 걸린 것의 89%가 무사했다.</p>
   <p class="note">여기 배율은 검정 쪽 ×3.70 과 분모가 다르다 — 검정은 신호군 대
      비신호군(통제 후), 이건 신호군 대 전체(무통제). 답하는 질문이 다르다.</p>
   <p>그래서 이 도구가 매수·매도를 말하지 않는다. 걸린 사실과 그 근거, 그리고
@@ -504,14 +539,14 @@ out_degree      —    ×1.08  ×0.55  ×0.49     같은 방향 1/4</pre>
         (2019~2021년 0건, 2026년 115건) 과거 시점에 쓰면 생존편향이 생긴다.</li>
     <li><strong>업종 통제가 시점 분리가 안 된다.</strong> 현재 업종 코드를 과거 시점에
         적용한다. 업종은 거의 안 바뀌지만 엄밀히는 미래를 본다.</li>
-    <li><strong>현금흐름을 못 본다.</strong> 주요계정 API 에 이자비용이 없어 이자보상배율도
-        못 만든다.</li>
+    <li><strong>손익 추세를 못 본다.</strong> 매출 감소는 검정에서 시점에 따라 갈렸고,
+        여러 해에 걸친 추세는 아직 신호로 만들지 않았다.</li>
   </ul>
 </section>
 
 <footer>
   <span>DART OpenAPI 정기보고서 + 공정거래위원회 공시 · 2024 사업연도 · 지분 관계 렌즈</span>
-  <span>구조 분석 12모듈 · 검사 10종(채택 3) · 테스트 383</span>
+  <span>구조 분석 12모듈 · 검사 12종(채택 5) · 테스트 396</span>
   <span><code>scripts/ask.py</code> 질문 검색 · <code>scripts/check_company.py</code> 종목 검사</span>
 </footer>
 
