@@ -43,8 +43,8 @@ from dartweave.signal.test import (
 from test_isolation_controlled import GRID
 
 
-SIGNALS_ORDER = ("완전자본잠식", "부분자본잠식", "영업손실", "당기순손실",
-                 "결손금", "부채비율 200% 초과", "매출 감소")
+SIGNALS_ORDER = ("완전자본잠식", "부분자본잠식", "자본잠식(완전+부분)", "영업손실",
+                 "당기순손실", "결손금", "부채비율 200% 초과", "매출 감소")
 
 
 def _get(acc: dict, name: str) -> float | None:
@@ -62,6 +62,8 @@ def features(acc: dict, prev: dict) -> dict[str, bool | None]:
         "완전자본잠식": None if equity is None else equity <= 0,
         "부분자본잠식": (None if equity is None or capital is None
                     else 0 < equity < capital),
+        "자본잠식(완전+부분)": (None if equity is None or capital is None
+                          else equity <= 0 or equity < capital),
         "영업손실": None if op is None else op < 0,
         "당기순손실": None if net is None else net < 0,
         "결손금": None if retained is None else retained < 0,
