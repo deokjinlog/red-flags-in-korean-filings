@@ -42,6 +42,10 @@ from dartweave.signal.test import (
 from test_isolation_controlled import GRID
 
 
+SIGNALS_ORDER = ("완전자본잠식", "부분자본잠식", "영업손실", "당기순손실",
+                 "결손금", "부채비율 200% 초과", "매출 감소")
+
+
 def _get(acc: dict, name: str) -> float | None:
     v = acc.get(name)
     return float(v) if v is not None else None
