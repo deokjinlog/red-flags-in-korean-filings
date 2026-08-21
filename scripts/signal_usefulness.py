@@ -29,6 +29,8 @@ SIGNALS = {
     "영업손실": lambda a: a.get("영업이익") is not None and float(a["영업이익"]) < 0,
     "당기순손실": lambda a: (a.get("당기순이익(손실)") is not None
                         and float(a["당기순이익(손실)"]) < 0),
+    "영업현금흐름 음수": lambda a: (a.get("영업활동현금흐름") is not None
+                            and float(a["영업활동현금흐름"]) < 0),
     "셋 중 하나라도": lambda a: any((
         float(a["이익잉여금"]) < 0,
         a.get("영업이익") is not None and float(a["영업이익"]) < 0,
@@ -48,10 +50,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--as-of", default="20220630,20230630")
     p.add_argument("--within-days", type=int, default=730)
     p.add_argument("--fin", default="data/fin_by_year.json")
+    p.add_argument("--cash", default="data/cashflow_by_year.json")
     p.add_argument("--runs", type=int, default=2000)
     args = p.parse_args(argv)
 
     fin = json.loads(Path(args.fin).read_text(encoding="utf-8"))
+    cash = (json.loads(Path(args.cash).read_text(encoding="utf-8"))
+            if Path(args.cash).exists() else {})
     engine = create_engine(args.db)
 
     for T in [x.strip() for x in args.as_of.split(",") if x.strip()]:
@@ -69,13 +74,15 @@ def main(argv: list[str] | None = None) -> int:
         # 재무 신호에 그래프 소속을 요구하지 않는다 — 요구하면 DART 타법인출자 API 의
         # 연도별 수록 편차가 표본을 좌우한다(2020 사업연도는 2021년의 3분의 1도 안 준다).
         pool = sorted(c for c in acc if "이익잉여금" in (acc.get(c) or {}))
+        cf = cash.get(year, {})
+        merged = {c: {**acc[c], **cf.get(c, {})} for c in pool}
         labels = [c in label for c in pool]
 
         print(f"\n{'=' * 76}\nT={T} · {year}년 재무 · {len(pool):,}사 · "
               f"이후 {args.within_days}일 부실 {sum(labels)}사 "
               f"(기저율 {sum(labels) / len(pool):.1%})\n")
         for name, rule in SIGNALS.items():
-            flags = [rule(acc[c]) for c in pool]
+            flags = [rule(merged[c]) for c in pool]
             u = usefulness(flags, labels)
             ci = lift_ci(flags, labels, runs=args.runs)
             band = f" · 95% CI ×{ci[0]:.2f}~×{ci[1]:.2f}" if ci else ""

@@ -409,11 +409,19 @@ def test_is_adopted_does_not_leak_withdrawn_checks():
     assert not is_adopted("있지도 않은 검사")
 
 
-def test_operating_loss_is_labelled_weaker_than_deficit():
-    """영업손실은 FDR 만 통과한다 — 결손금과 같은 강도로 팔면 안 된다."""
-    strong, weak = verification_of("결손금"), verification_of("영업손실")
-    assert "Bonferroni 통과" in strong
-    assert "Bonferroni 를 넘는 시점이 4개 중 3개" in weak and "채택(약)" in weak
+def test_signal_strengths_are_graded_not_lumped():
+    """여섯 신호의 근거 강도가 다르다 — 같은 문구로 팔면 안 된다."""
+    strong = verification_of("결손금")
+    assert "네 시점 전부 Bonferroni 통과" in strong and "유일하다" in strong
+    for kind in ("당기순손실", "영업손실", "이자보상배율 1 미만"):
+        assert "Bonferroni 는 4개 중 3개" in verification_of(kind), kind
+    weak = verification_of("영업현금흐름 음수")
+    assert "채택(약)" in weak and "4개 중 2개" in weak
+
+
+def test_family_growth_is_recorded_not_hidden():
+    """신호를 더 검정하면 가족이 커져 임계가 조여진다 — 그 대가를 적어둔다."""
+    assert "가족이 26→35" in verification_of("당기순손실")
 
 
 def test_weak_adoption_still_counts_as_adopted():
@@ -452,3 +460,37 @@ def test_net_loss_records_that_an_earlier_verdict_was_wrong():
     from dartweave.screen.flags import net_loss
 
     assert "그 판정이 틀렸다" in (net_loss.__doc__ or "")
+
+
+def test_cashflow_and_coverage_checks_need_their_inputs():
+    """현금흐름·이자비용이 없으면 판정하지 않는다 — 없는 걸 '양호' 로 세지 않는다."""
+    from dartweave.screen.flags import (
+        interest_coverage_below_one,
+        negative_operating_cashflow,
+    )
+
+    assert negative_operating_cashflow(None) is None
+    assert negative_operating_cashflow(5_000_000_000) is None
+    assert negative_operating_cashflow(-5_000_000_000, year="2023") is not None
+
+    assert interest_coverage_below_one(None, 100.0) is None
+    assert interest_coverage_below_one(100.0, None) is None
+    assert interest_coverage_below_one(100.0, 0.0) is None      # 0 으로 나누면 무한대
+
+
+def test_interest_coverage_fires_on_profitable_but_overleveraged():
+    """흑자여도 이자가 더 크면 걸린다 — 부채 많은 흑자 기업이 그렇다."""
+    from dartweave.screen.flags import interest_coverage_below_one
+
+    f = interest_coverage_below_one(30_000_000_000, 70_000_000_000, year="2023")
+    assert f and "0.43배" in f.summary
+    assert interest_coverage_below_one(70_000_000_000, 30_000_000_000) is None
+
+
+def test_negative_coverage_ratio_is_not_printed_as_a_number():
+    """영업손실이면 배율이 음수다 — '-8.40배' 는 여유가 있는 것처럼 오독된다."""
+    from dartweave.screen.flags import interest_coverage_below_one
+
+    loss = interest_coverage_below_one(-78_200_000_000, 9_300_000_000, year="2023")
+    assert loss and "배" not in loss.summary.split("—")[1].split("(")[0]
+    assert "영업손실이라" in loss.summary

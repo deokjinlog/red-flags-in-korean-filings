@@ -211,6 +211,19 @@ def main(argv: list[str] | None = None) -> int:
               f"{f' · 영업이익 {op_income / 1e8:,.0f}억' if op_income is not None else ''}"
               f"{f' · 당기순이익 {net / 1e8:,.0f}억' if net is not None else ''}")
 
+    # 현금흐름·이자비용은 주요계정 API 에 없어 전체 재무제표에서 따로 받는다.
+    cash_flow = interest = None
+    cp = Path("data/cashflow_by_year.json")
+    if cp.exists() and fiscal_year:
+        cf = (json.loads(cp.read_text(encoding="utf-8"))
+              .get(fiscal_year, {}).get(code) or {})
+        v = cf.get("영업활동현금흐름")
+        cash_flow = float(v) if v is not None else None
+        for key in ("이자의지급", "이자비용", "금융원가"):
+            if cf.get(key):
+                interest = float(cf[key])
+                break
+
     gbp = Path("data/baseline_graph.json")
     gbase = json.loads(gbp.read_text(encoding="utf-8")) if gbp.exists() else {}
     if gbase:
@@ -225,6 +238,8 @@ def main(argv: list[str] | None = None) -> int:
         retained_earnings=retained,
         operating_income=op_income,
         net_income=net,
+        operating_cashflow=cash_flow,
+        interest_cost=interest,
         fiscal_year=fiscal_year,
     )
 
@@ -265,8 +280,8 @@ def main(argv: list[str] | None = None) -> int:
         print("모델 출력은 interpret() 를 거쳐야 한다 — 이 토큰 밖의 숫자나 "
               "기업명이 나오면 HallucinationDetected 로 중단된다.")
 
-    print("\n검사 범위 — 지분 관계 + 공정위 공시 + 주요계정(이익잉여금·영업이익·당기순이익). "
-          "현금흐름과 손익 추세는 아직 안 본다.")
+    print("\n검사 범위 — 지분 관계 + 공정위 공시 + 재무(이익잉여금·영업이익·"
+          "당기순이익·영업활동현금흐름·이자비용). 손익 추세와 본문 공시는 아직 안 본다.")
     print("이 도구는 매수·매도를 말하지 않는다. 걸린 것과 그 근거만 낸다.\n")
     return 0
 

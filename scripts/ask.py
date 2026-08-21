@@ -79,6 +79,7 @@ def main(argv=None) -> int:
                       if Path(p).exists() else {})
     members = set(load("data/conglomerate_members.json").get("members", []))
     fin = load("data/fin_by_year.json")
+    cash = load("data/cashflow_by_year.json")
     baseline = load("data/baseline_graph.json")
 
     def financials(code):
@@ -90,6 +91,13 @@ def main(argv=None) -> int:
                         float(op) if op is not None else None,
                         float(ni) if ni is not None else None, y)
         return None, None, None, ""
+
+    def cashflow(code, year):
+        cf = (cash.get(year, {}) or {}).get(code) or {}
+        v = cf.get("영업활동현금흐름")
+        interest = next((float(cf[k]) for k in ("이자의지급", "이자비용", "금융원가")
+                         if cf.get(k)), None)
+        return (float(v) if v is not None else None), interest
 
     print(f"\n질문  {args.question}")
     found = [(n, c) for n, c in find_companies(args.question, by_name) if c in in_graph]
@@ -111,9 +119,11 @@ def main(argv=None) -> int:
         shared = sorted(((nm(c), h, choke[c]) for c, h in d.items() if c in choke),
                         key=lambda x: (x[1], x[2]))
         retained, op_income, net, year = financials(code)
+        op_cash, interest = cashflow(code, year)
         flags = screen(edges, code, name=nm, chokepoints=choke, baseline=baseline,
                        conglomerate_members=members, retained_earnings=retained,
                        operating_income=op_income, net_income=net,
+                       operating_cashflow=op_cash, interest_cost=interest,
                        fiscal_year=year)
         # 채택된 것부터 낸다 — 순서가 곧 "무엇을 믿고 말할 수 있는가" 다.
         flags.sort(key=lambda f: not is_adopted(f.kind))
@@ -136,7 +146,7 @@ def main(argv=None) -> int:
         adopted = [f for f in flags if is_adopted(f.kind)]
         rest = [f for f in flags if not is_adopted(f.kind)]
         if adopted:
-            print("\n  ── 검정 통과 (이 둘만 부실과의 연관이 확인됐다) ──")
+            print(f"\n  ── 검정 통과 ({len(adopted)}건 · 부실과의 연관이 확인된 것만) ──")
             for f in adopted:
                 print(f"  [{f.kind}] {f.summary}")
                 for line in f.evidence[:2]:
@@ -147,7 +157,7 @@ def main(argv=None) -> int:
                 print(f"  [{f.kind}] {f.summary}")
         if not adopted:
             print("\n  ── 검정 통과한 항목 없음 ──")
-            print("  재무 신호(결손금·영업손실)에 안 걸렸다는 뜻이다. "
+            print("  채택된 재무 신호 다섯 개에 하나도 안 걸렸다는 뜻이다. "
                   "'안전' 이 아니라 '이 검사에는 안 걸림' 이다.")
 
     blob = json.dumps(payload, ensure_ascii=False)

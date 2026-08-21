@@ -26,21 +26,31 @@ NEAR_HOPS = 2      # 공동 의존점까지 몇 홉이면 '물려 있다' 로 �
 # 이 표가 이 도구의 정직성이다. 걸렸다는 것과 위험하다는 것은 다른 말이고,
 # 우리는 후자를 아직 대부분 모른다.
 VERIFICATION: dict[str, str] = {
+    "이자보상배율 1 미만": (
+        "**채택** · 기준시점 4개 × 통제 설정 7개 = 28개 조합 **전부**에서 유의 "
+        "(최보수 ×3.44 / ×3.32 / ×1.82 / ×3.70) · 다중검정(가족 35)은 네 시점 전부 "
+        "FDR 통과 · Bonferroni 는 4개 중 3개"
+    ),
+    "영업현금흐름 음수": (
+        "**채택(약)** · 28개 조합 전부에서 유의 (최보수 ×2.01 / ×2.16 / ×1.96 / ×3.78) "
+        "이지만 다중검정에서 **Bonferroni 를 넘는 시점이 4개 중 2개**(임계 0.00143)"
+    ),
     "결손금": (
         "**채택** · 기준시점 4개(2021~2024) × 규모·업종 통제 설정 7개 = 28개 조합 "
         "**전부**에서 유의 (최보수 ×6.78 / ×4.16 / ×2.69 / ×4.53 · p 전부 0.0001) · "
-        "다중검정 보정(가족 26)에서 **네 시점 전부 Bonferroni 통과** · 관측 창 "
-        "365·730·1095일 **11칸 전부에서 채택** — 가장 강한 신호다"
+        "다중검정 보정(가족 35)에서 **네 시점 전부 Bonferroni 통과 — 여섯 신호 중 "
+        "유일하다** · 관측 창 365·730·1095일 11칸 전부에서 채택"
     ),
     "당기순손실": (
         "**채택** · 28개 조합 전부에서 유의 (최보수 ×3.41 / ×2.27 / ×2.43 / ×4.03) · "
-        "다중검정에서 **네 시점 전부 Bonferroni 통과** · 관측 창을 흔들어도 판정이 난 "
-        "칸은 전부 채택"
+        "다중검정은 네 시점 전부 FDR 통과 · Bonferroni 는 4개 중 3개 "
+        "(신호를 더 검정하면서 가족이 26→35 로 커져 임계가 조여졌다) · "
+        "관측 창을 흔들어도 판정이 난 칸은 전부 채택"
     ),
     "영업손실": (
-        "**채택(약)** · 28개 조합 전부에서 유의 (최보수 ×2.44 / ×2.96 / ×1.96 / ×3.13) "
-        "이지만 다중검정에서 **Bonferroni 를 넘는 시점이 4개 중 3개**(임계 0.00192). "
-        "결손금·당기순손실보다 한 단계 약한 근거다. 관측 창을 흔들어도 뒤집히지는 않는다"
+        "**채택** · 28개 조합 전부에서 유의 (최보수 ×2.44 / ×2.96 / ×1.96 / ×3.13) "
+        "· 다중검정은 네 시점 전부 FDR 통과 · Bonferroni 는 4개 중 3개(임계 0.00143). "
+        "관측 창을 흔들어도 뒤집히지는 않는다"
     ),
     "공동의존점 근접":
         "검정됨 · 부실과 **반대 방향** (먼 쪽이 2배 · p=0.0007, 감사의견 라벨로도 ×0.50)",
@@ -492,6 +502,71 @@ def net_loss(net_income: float | None, *, year: str = "") -> Flag | None:
     )
 
 
+def negative_operating_cashflow(cash: float | None, *, year: str = "") -> Flag | None:
+    """영업활동현금흐름 음수 — 본업에서 현금이 나가고 있다.
+
+    기준시점 4개 × 통제 설정 7개 전부에서 유의했다:
+
+      T=2021   해당 453사 · 이후 2년 부실 5.96%   ×2.01 · p=0.0082
+      T=2022   해당 754사 · 5.31%                ×2.16 · p=0.0011
+      T=2023   해당 776사 · 5.80%                ×1.96 · p=0.0046
+      T=2024   해당 726사 · 8.40%                ×3.78 · p=0.0001
+
+    영업손실과 겹치지만 같지 않다 — 이익은 났는데 현금이 안 들어오는 회사(매출채권·
+    재고 증가)가 여기만 걸린다. 반대로 대규모 감가상각이 있으면 적자여도 현금은 들어온다.
+
+    주요계정 API 에는 현금흐름표가 없어서 전체 재무제표 API 로 따로 받아야 한다.
+    """
+    if cash is None or cash >= 0:
+        return None
+    label = f"{year}년 " if year else ""
+    return Flag(
+        kind="영업현금흐름 음수",
+        summary=f"{label}영업활동현금흐름이 마이너스 — 유출 {abs(cash) / 1e8:,.0f}억",
+        evidence=["영업현금흐름이 마이너스인 기업의 이후 2년 부실률 실측 5.4~8.4% "
+                  "(전체 2.9~4.1% · 규모·업종 통제 후 ×2.0~3.8 · 기준시점 4개)",
+                  "다만 **그중 92~95%는 2년 안에 아무 일도 없었다** — "
+                  "상장사의 23~35%가 여기 걸리고, 실제 부실의 47~67%를 잡는다"],
+    )
+
+
+def interest_coverage_below_one(
+    operating_income: float | None, interest: float | None, *, year: str = ""
+) -> Flag | None:
+    """이자보상배율 1 미만 — 영업이익으로 이자도 못 갚는다.
+
+    기준시점 4개 × 통제 설정 7개 전부에서 유의했다:
+
+      T=2021   해당 673사 · 이후 2년 부실 5.65%   ×3.44 · p=0.0002
+      T=2022   해당 636사 · 6.29%                ×3.32 · p=0.0001
+      T=2023   해당 684사 · 5.85%                ×1.82 · p=0.0044
+      T=2024   해당 863사 · 7.53%                ×3.70 · p=0.0001
+
+    영업손실이면 정의상 이자를 갚을 재원이 없으므로 여기에도 걸린다. 반대로 흑자여도
+    이자가 그보다 크면 걸린다 — 부채가 많은 흑자 기업이 그렇다.
+
+    이자비용은 실제로 나간 현금(이자의 지급)을 먼저 쓴다. 금융원가에는 외환차손·
+    파생상품평가손실이 섞여 있어 배율을 실제보다 나쁘게 만든다.
+    """
+    if operating_income is None or interest is None or interest <= 0:
+        return None
+    if operating_income >= interest:
+        return None
+    label = f"{year}년 " if year else ""
+    # 영업손실이면 배율이 음수로 나온다. "-8.4배" 는 읽는 사람에게 아무 뜻이 없고
+    # 8.4배 여유가 있는 것처럼 오독될 수도 있다 — 그때는 배율 대신 말로 쓴다.
+    how = (f"배율 {operating_income / interest:.2f}배" if operating_income > 0
+           else "영업손실이라 이자 갚을 재원이 없다")
+    return Flag(
+        kind="이자보상배율 1 미만",
+        summary=f"{label}영업이익으로 이자를 못 갚는다 — {how} "
+                f"(영업이익 {operating_income / 1e8:,.0f}억 · 이자 {interest / 1e8:,.0f}억)",
+        evidence=["이자보상배율 1 미만 기업의 이후 2년 부실률 실측 5.7~7.5% "
+                  "(전체 2.9~4.1% · 규모·업종 통제 후 ×1.8~3.4 · 기준시점 4개)",
+                  "상장사의 29~38%가 여기 걸린다 — 넓게 거는 신호다"],
+    )
+
+
 def screen(
     edges: list[tuple[str, str, str]],
     corp_code: str,
@@ -505,6 +580,8 @@ def screen(
     retained_earnings: float | None = None,
     operating_income: float | None = None,
     net_income: float | None = None,
+    operating_cashflow: float | None = None,
+    interest_cost: float | None = None,
     fiscal_year: str = "",
 ) -> list[Flag]:
     """걸리는 것만 모아서 돌려준다. 빈 목록은 '이상 없음' 이 아니라 **'이 검사들에는
@@ -522,6 +599,8 @@ def screen(
         accumulated_deficit(retained_earnings, year=fiscal_year),
         operating_loss(operating_income, year=fiscal_year),
         net_loss(net_income, year=fiscal_year),
+        negative_operating_cashflow(operating_cashflow, year=fiscal_year),
+        interest_coverage_below_one(operating_income, interest_cost, year=fiscal_year),
     ]
     out: list[Flag] = []
     for f in found:
