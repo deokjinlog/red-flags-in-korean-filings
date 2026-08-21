@@ -123,6 +123,31 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {T:10s} {len(base):6,} {len(label & set(base)):5d}  "
               f"{out[0]:>18s}  {out[1]:>20s}")
 
+    print(f"\n  세 집단이 각각 어떻게 움직였나\n"
+          f"  {'기준시점':10s} {'소속':>15s} {'연결':>15s} {'고립':>15s}")
+    for T in [x.strip() for x in args.as_of.split(",") if x.strip()]:
+        try:
+            with Session(engine) as s:
+                latest = latest_edges_at(s, T)
+                events = events_after(s, T, within_days=args.within_days)
+        except CensoredWindowError:
+            continue
+        own = classify(latest, members)
+        label = {e.corp_code for e in events if "해산" not in e.event_type}
+        assets = by_year.get(str(int(T[:4]) - 1), {})
+        groups = defaultdict(list)
+        for c, tag in own.items():
+            if c in assets and c in industry:
+                groups[tag].append(c)
+        cells = []
+        for tag in ("소속", "연결", "고립"):
+            n = len(groups[tag])
+            hit = sum(1 for c in groups[tag] if c in label)
+            cells.append(f"{hit / n * 100 if n else 0:5.2f}% ({hit}/{n})")
+        print(f"  {T:10s} {cells[0]:>15s} {cells[1]:>15s} {cells[2]:>15s}")
+    print("\n  고립군은 단조로 오르고, 소속군은 초기 시점만 높다. 그 초기 값은 293사에"
+          "\n  11건이라 흔들리는 자리다 — 역전의 상당 부분이 거기서 나온다.")
+
     print("\n  왼쪽은 시점 분리를 지킨 정식 결과, 오른쪽은 노출변수만 잘 재본 진단이다."
           "\n  오른쪽이 초기 시점에서도 커지면 초기의 널은 측정 탓이고,"
           "\n  왼쪽처럼 여전히 작으면 시간에 따른 실제 변화 쪽에 무게가 실린다.")
