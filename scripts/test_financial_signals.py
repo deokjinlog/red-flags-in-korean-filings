@@ -44,7 +44,8 @@ from test_isolation_controlled import GRID
 
 
 SIGNALS_ORDER = ("완전자본잠식", "부분자본잠식", "자본잠식(완전+부분)", "영업손실",
-                 "당기순손실", "결손금", "부채비율 200% 초과", "매출 감소")
+                 "당기순손실", "결손금", "부채비율 200% 초과", "매출 감소",
+                 "영업현금흐름 음수", "이자보상배율 1 미만")
 
 
 def _get(acc: dict, name: str) -> float | None:
@@ -52,7 +53,20 @@ def _get(acc: dict, name: str) -> float | None:
     return float(v) if v is not None else None
 
 
-def features(acc: dict, prev: dict) -> dict[str, bool | None]:
+def interest_cost(cf: dict) -> float | None:
+    """이자비용 — 실제로 나간 현금이 가장 곧다. 없으면 발생주의, 그것도 없으면 금융원가.
+
+    금융원가를 마지막에 두는 이유: 이자 외 항목(외환차손·파생상품평가손실)이 섞여 있어
+    이자보상배율을 실제보다 나쁘게 만든다.
+    """
+    for key in ("이자의지급", "이자비용", "금융원가"):
+        v = cf.get(key)
+        if v is not None and float(v) > 0:
+            return float(v)
+    return None
+
+
+def features(acc: dict, prev: dict, cf: dict | None = None) -> dict[str, bool | None]:
     """재무 신호 후보. 값이 없으면 None — 모르는 걸 '아니다' 로 세지 않는다."""
     equity, capital = _get(acc, "자본총계"), _get(acc, "자본금")
     debt, op = _get(acc, "부채총계"), _get(acc, "영업이익")
@@ -71,6 +85,12 @@ def features(acc: dict, prev: dict) -> dict[str, bool | None]:
                         else debt / equity > 2.0),
         "매출 감소": (None if sales is None or sales_prev is None or sales_prev <= 0
                   else sales < sales_prev),
+        "영업현금흐름 음수": (None if not cf or cf.get("영업활동현금흐름") is None
+                     else float(cf["영업활동현금흐름"]) < 0),
+        # 영업이익으로 이자도 못 갚는가. 영업손실이면 정의상 못 갚는 것이라 True 다.
+        "이자보상배율 1 미만": (None if not cf or op is None
+                        or interest_cost(cf) is None
+                        else op < interest_cost(cf)),
     }
 
 
@@ -106,12 +126,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--as-of", default="20220630,20230630")
     p.add_argument("--within-days", type=int, default=730)
     p.add_argument("--fin", default="data/fin_by_year.json")
+    p.add_argument("--cash", default="data/cashflow_by_year.json")
     p.add_argument("--industry", default="data/industry.json")
     p.add_argument("--runs", type=int, default=8000)
     args = p.parse_args(argv)
 
     read = lambda f: json.loads(Path(f).read_text(encoding="utf-8"))  # noqa: E731
     fin = read(args.fin)
+    cash = read(args.cash) if Path(args.cash).exists() else {}
     industry = {k: str(v) for k, v in read(args.industry).items() if v}
     engine = create_engine(args.db)
 
@@ -119,6 +141,7 @@ def main(argv: list[str] | None = None) -> int:
     for T in [x.strip() for x in args.as_of.split(",") if x.strip()]:
         year = str(int(T[:4]) - 1)              # T 시점에 이미 공시된 마지막 사업연도
         acc_now, acc_prev = fin.get(year, {}), fin.get(str(int(year) - 1), {})
+        cash_now = cash.get(year, {})
         with Session(engine) as s:
             try:
                 events = events_after(s, T, within_days=args.within_days)
@@ -128,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"\n{'=' * 74}\nT={T} 건너뜀 — {e}")
                 continue
         label = {e.corp_code for e in events if is_distress(e.event_type)}
-        feats = {c: features(acc_now[c], acc_prev.get(c, {}))
+        feats = {c: features(acc_now[c], acc_prev.get(c, {}), cash_now.get(c, {}))
                  for c in acc_now if acc_now[c].get("자산총계")}
         assets = {c: float(acc_now[c]["자산총계"]) for c in feats}
         pool = sorted(c for c in feats if c in industry)
@@ -137,7 +160,7 @@ def main(argv: list[str] | None = None) -> int:
               f"· 이후 {args.within_days}일 부실 {len(label & set(pool))}사\n")
         print(f"  {'신호':16s} {'해당':>6s} {'부실률':>7s} {'통제없음':>8s} "
               f"{'최보수':>7s} {'p':>8s}  판정")
-        for name in features({}, {}):
+        for name in SIGNALS_ORDER:
             hit = [c for c in pool if feats[c].get(name)]
             if len(hit) < 30:
                 print(f"  {name:16s} {len(hit):>6,}  — 해당 기업이 적어 판정 보류")
