@@ -79,7 +79,8 @@ def test_labels_come_from_after_the_feature_date(session):
 
 
 def test_label_window_can_be_bounded(session):
-    assert len(events_after(session, "20240101", within_days=60)) == 1
+    # 픽스처의 마지막 사건이 20240226 이라 창을 그 안에 두어야 절단이 아니다.
+    assert len(events_after(session, "20240101", within_days=56)) == 1
     assert events_after(session, "20240101", within_days=30) == []
 
 
@@ -94,3 +95,48 @@ def test_feature_date_must_precede_label_date():
 def test_malformed_date_is_rejected(session):
     with pytest.raises(ValueError):
         facts_known_at(session, "2024-01-01")
+
+
+def test_censored_window_is_refused_by_default(tmp_path):
+    """미래를 훔쳐보는 것의 반대쪽 실수 — 창이 데이터 끝을 넘으면 조용히 낮게 나온다."""
+    import pytest
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from dartweave.db.asof import CensoredWindowError, data_horizon, events_after
+    from dartweave.db.models import Base, DistressEvent
+
+    engine = create_engine(f"sqlite:///{tmp_path}/t.db")
+    Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        s.add(DistressEvent(rcept_no="1", corp_code="c1", event_type="부도",
+                            rcept_dt="20240101", detail={}))
+        s.commit()
+
+        assert data_horizon(s) == "20240101"
+        # 창이 데이터 끝 안에 있으면 정상 (20231201 + 31일 = 20240101)
+        assert len(events_after(s, "20231201", within_days=31)) == 1
+        # 넘어가면 막는다
+        with pytest.raises(CensoredWindowError) as e:
+            events_after(s, "20231201", within_days=730)
+        assert "실제로는" in str(e.value)
+        # 감수하고 볼 때만 명시적으로 연다
+        assert len(events_after(s, "20231201", within_days=730,
+                                allow_censored=True)) == 1
+
+
+def test_no_window_means_no_censoring_check(tmp_path):
+    """창을 안 걸면 절단 개념 자체가 없다 — 괜히 막지 않는다."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from dartweave.db.asof import events_after
+    from dartweave.db.models import Base, DistressEvent
+
+    engine = create_engine(f"sqlite:///{tmp_path}/t2.db")
+    Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        s.add(DistressEvent(rcept_no="1", corp_code="c1", event_type="부도",
+                            rcept_dt="20240101", detail={}))
+        s.commit()
+        assert len(events_after(s, "20200101")) == 1

@@ -33,7 +33,7 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from dartweave.db.asof import events_after
+from dartweave.db.asof import CensoredWindowError, events_after
 from dartweave.signal.test import (
     Verdict,
     mantel_haenszel_ratio,
@@ -113,7 +113,13 @@ def main(argv: list[str] | None = None) -> int:
         year = str(int(T[:4]) - 1)              # T 시점에 이미 공시된 마지막 사업연도
         acc_now, acc_prev = fin.get(year, {}), fin.get(str(int(year) - 1), {})
         with Session(engine) as s:
-            events = events_after(s, T, within_days=args.within_days)
+            try:
+                events = events_after(s, T, within_days=args.within_days)
+            except CensoredWindowError as e:
+                # 관측 창이 모자란 기준시점 하나 때문에 전체 실행을 죽이지 않는다.
+                # 대신 **조용히 포함시키지도 않는다** — 그게 배율 비교를 어긋나게 한다.
+                print(f"\n{'=' * 74}\nT={T} 건너뜀 — {e}")
+                continue
         label = {e.corp_code for e in events if "해산" not in e.event_type}
         feats = {c: features(acc_now[c], acc_prev.get(c, {}))
                  for c in acc_now if acc_now[c].get("자산총계")}

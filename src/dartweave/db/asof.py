@@ -14,7 +14,9 @@
 """
 from __future__ import annotations
 
-from sqlalchemy import select
+from datetime import date, timedelta
+
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from dartweave.db.models import DistressEvent, RelationFact
@@ -22,6 +24,18 @@ from dartweave.db.models import DistressEvent, RelationFact
 
 class LookAheadError(ValueError):
     """미래 정보를 요구했을 때."""
+
+
+class CensoredWindowError(ValueError):
+    """관측 창이 수집된 데이터 끝을 넘어갈 때.
+
+    미래를 훔쳐보는 것의 **반대쪽 실수**다. T+730일까지 부실을 세겠다고 해놓고
+    데이터가 T+546일에서 끝나면, 그 기준시점의 부실률만 조용히 낮게 나온다.
+    비교하는 기준시점끼리 관측 기간이 다르면 배율 차이가 신호가 아니라 절단이다.
+
+    실측 사고: T=2023-06-30 의 730일 창이 546일에서 잘려 있었는데, 기준시점 3개의
+    배율이 ×6.35 → ×3.80 → ×2.76 로 줄어드는 걸 '시점에 따른 차이' 로 읽을 뻔했다.
+    """
 
 
 def _check(as_of_date: str) -> str:
@@ -61,23 +75,44 @@ def latest_edges_at(
     return out
 
 
+def data_horizon(session: Session) -> str | None:
+    """수집된 부실 사건의 마지막 접수일. 관측 창이 여기를 넘으면 절단이다."""
+    return session.execute(select(func.max(DistressEvent.rcept_dt))).scalar()
+
+
 def events_after(
-    session: Session, as_of_date: str, *, within_days: int | None = None
+    session: Session,
+    as_of_date: str,
+    *,
+    within_days: int | None = None,
+    allow_censored: bool = False,
 ) -> list[DistressEvent]:
     """`as_of_date` **이후**에 발생한 부실 사건 — 신호 검정의 정답지.
 
     특징은 T 이전만, 라벨은 T 이후만. 이 경계가 흐려지면 검정이 무의미해진다.
+
+    창이 수집 끝을 넘으면 `CensoredWindowError` 를 낸다. 예외가 기본값인 이유는
+    절단이 **조용히** 부실률을 낮추기 때문이다 — 빠뜨려도 결과가 그럴듯하게 나와서
+    알아채기 어렵다. 절단을 감수하고 볼 때만 `allow_censored=True` 로 명시한다.
     """
     t = _check(as_of_date)
     stmt = select(DistressEvent).where(DistressEvent.rcept_dt > t)
     rows = list(session.scalars(stmt))
-    if within_days is not None:
-        from datetime import date, timedelta
+    if within_days is None:
+        return rows
 
-        d0 = date(int(t[:4]), int(t[4:6]), int(t[6:8]))
-        limit = (d0 + timedelta(days=within_days)).strftime("%Y%m%d")
-        rows = [r for r in rows if r.rcept_dt <= limit]
-    return rows
+    d0 = date(int(t[:4]), int(t[4:6]), int(t[6:8]))
+    limit = (d0 + timedelta(days=within_days)).strftime("%Y%m%d")
+    horizon = data_horizon(session)
+    if horizon is not None and limit > horizon and not allow_censored:
+        covered = (date(int(horizon[:4]), int(horizon[4:6]), int(horizon[6:8])) - d0).days
+        raise CensoredWindowError(
+            f"T={t} 에서 {within_days}일 창은 {limit} 까지인데 수집된 사건은 "
+            f"{horizon} 까지다 — 실제로는 {covered}일만 관측된다. "
+            f"이 기준시점의 부실률만 낮게 나와 배율 비교가 어긋난다. "
+            f"사건을 더 수집하거나 --within-days {covered} 이하로 맞춰라."
+        )
+    return [r for r in rows if r.rcept_dt <= limit]
 
 
 def assert_no_look_ahead(features_at: str, label_at: str) -> None:

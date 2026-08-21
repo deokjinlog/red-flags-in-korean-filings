@@ -25,7 +25,11 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from dartweave.db.asof import events_after, latest_edges_at
+from dartweave.db.asof import (
+    CensoredWindowError,
+    events_after,
+    latest_edges_at,
+)
 from dartweave.signal.test import (
     Verdict,
     mantel_haenszel_ratio,
@@ -57,9 +61,13 @@ def main(argv: list[str] | None = None) -> int:
     for T in [x.strip() for x in args.as_of.split(",") if x.strip()]:
         year = str(int(T[:4]) - 1)
         acc = fin.get(year, {})
-        with Session(engine) as s:
-            latest = latest_edges_at(s, T)
-            events = events_after(s, T, within_days=args.within_days)
+        try:
+            with Session(engine) as s:
+                latest = latest_edges_at(s, T)
+                events = events_after(s, T, within_days=args.within_days)
+        except CensoredWindowError as e:
+            print(f"\n{'=' * 68}\nT={T} 건너뜀 — {e}")
+            continue
         edges = [(f.source_corp_code, f.target_corp_code, f.rel_type)
                  for f in latest.values()]
         nb = neighbours_of(edges)
