@@ -21,6 +21,7 @@ from collections import deque
 from pathlib import Path
 
 from dartweave.screen.flags import is_adopted, screen
+from dartweave.screen.inputs import load_financials
 from dartweave.structure.interpret import allowed_tokens, build_prompt
 from dartweave.structure.project import project
 
@@ -73,31 +74,12 @@ def main(argv=None) -> int:
     in_graph = {v for e in edges for v in e[:2]}
     nm = lambda c: names.get(c, c)
 
-    # 검정을 통과한 두 신호는 재무에서 나온다. 이걸 안 실으면 "사도 되나" 라는 질문에
-    # **떨어진 것만 답하고 통과한 건 빼놓는** 셈이 된다.
+    # 검정을 통과한 다섯 신호는 재무에서 나온다. 이걸 안 실으면 "사도 되나" 라는
+    # 질문에 **떨어진 것만 답하고 통과한 건 빼놓는** 셈이 된다. 실제로 그런 적이 있다.
     load = lambda p: (json.loads(Path(p).read_text(encoding="utf-8"))
                       if Path(p).exists() else {})
     members = set(load("data/conglomerate_members.json").get("members", []))
-    fin = load("data/fin_by_year.json")
-    cash = load("data/cashflow_by_year.json")
     baseline = load("data/baseline_graph.json")
-
-    def financials(code):
-        for y in sorted(fin, reverse=True):
-            acc = fin[y].get(code) or {}
-            if "이익잉여금" in acc:
-                op, ni = acc.get("영업이익"), acc.get("당기순이익(손실)")
-                return (float(acc["이익잉여금"]),
-                        float(op) if op is not None else None,
-                        float(ni) if ni is not None else None, y)
-        return None, None, None, ""
-
-    def cashflow(code, year):
-        cf = (cash.get(year, {}) or {}).get(code) or {}
-        v = cf.get("영업활동현금흐름")
-        interest = next((float(cf[k]) for k in ("이자의지급", "이자비용", "금융원가")
-                         if cf.get(k)), None)
-        return (float(v) if v is not None else None), interest
 
     print(f"\n질문  {args.question}")
     found = [(n, c) for n, c in find_companies(args.question, by_name) if c in in_graph]
@@ -118,13 +100,15 @@ def main(argv=None) -> int:
                         key=lambda c: -g.degree(g.vs.find(corp_code=c).index))
         shared = sorted(((nm(c), h, choke[c]) for c, h in d.items() if c in choke),
                         key=lambda x: (x[1], x[2]))
-        retained, op_income, net, year = financials(code)
-        op_cash, interest = cashflow(code, year)
+        fin = load_financials(code)
         flags = screen(edges, code, name=nm, chokepoints=choke, baseline=baseline,
-                       conglomerate_members=members, retained_earnings=retained,
-                       operating_income=op_income, net_income=net,
-                       operating_cashflow=op_cash, interest_cost=interest,
-                       fiscal_year=year)
+                       conglomerate_members=members,
+                       retained_earnings=fin.retained_earnings,
+                       operating_income=fin.operating_income,
+                       net_income=fin.net_income,
+                       operating_cashflow=fin.operating_cashflow,
+                       interest_cost=fin.interest_cost,
+                       fiscal_year=fin.fiscal_year)
         # 채택된 것부터 낸다 — 순서가 곧 "무엇을 믿고 말할 수 있는가" 다.
         flags.sort(key=lambda f: not is_adopted(f.kind))
         entry = {

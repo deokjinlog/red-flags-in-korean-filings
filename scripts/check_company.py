@@ -24,6 +24,7 @@ from dartweave.parse.structured_rel import parse_investment, parse_major_shareho
 from dartweave.resolve.aliases import load_aliases
 from dartweave.resolve.resolver import Resolver
 from dartweave.screen.flags import funding_rarity, screen, trade_rarity
+from dartweave.screen.inputs import load_financials
 from dartweave.structure.interpret import allowed_tokens, build_prompt
 from dartweave.structure.project import project
 
@@ -193,36 +194,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  대기업집단   소속 명단 {len(members):,}사 "
               f"({'소속' if code in members else '미소속'})")
 
-    # 재무 — 이 도구에서 유일하게 검정을 통과한 신호가 여기서 나온다.
-    retained, op_income, net, fiscal_year = None, None, None, ""
-    fp = Path("data/fin_by_year.json")
-    if fp.exists():
-        fin = json.loads(fp.read_text(encoding="utf-8"))
-        for y in sorted(fin, reverse=True):
-            acc = fin[y].get(code) or {}
-            if "이익잉여금" in acc:
-                retained, fiscal_year = float(acc["이익잉여금"]), y
-                op, ni = acc.get("영업이익"), acc.get("당기순이익(손실)")
-                op_income = float(op) if op is not None else None
-                net = float(ni) if ni is not None else None
-                break
-        print(f"  재무          {fiscal_year or '없음'}"
-              f"{f' 사업연도 · 이익잉여금 {retained / 1e8:,.0f}억' if retained is not None else ''}"
-              f"{f' · 영업이익 {op_income / 1e8:,.0f}억' if op_income is not None else ''}"
-              f"{f' · 당기순이익 {net / 1e8:,.0f}억' if net is not None else ''}")
-
-    # 현금흐름·이자비용은 주요계정 API 에 없어 전체 재무제표에서 따로 받는다.
-    cash_flow = interest = None
-    cp = Path("data/cashflow_by_year.json")
-    if cp.exists() and fiscal_year:
-        cf = (json.loads(cp.read_text(encoding="utf-8"))
-              .get(fiscal_year, {}).get(code) or {})
-        v = cf.get("영업활동현금흐름")
-        cash_flow = float(v) if v is not None else None
-        for key in ("이자의지급", "이자비용", "금융원가"):
-            if cf.get(key):
-                interest = float(cf[key])
-                break
+    fin = load_financials(code)
+    if fin.fiscal_year:
+        parts = [f"이익잉여금 {fin.retained_earnings / 1e8:,.0f}억"]
+        if fin.operating_income is not None:
+            parts.append(f"영업이익 {fin.operating_income / 1e8:,.0f}억")
+        if fin.operating_cashflow is not None:
+            parts.append(f"영업현금흐름 {fin.operating_cashflow / 1e8:,.0f}억")
+        print(f"  재무          {fin.fiscal_year} 사업연도 · " + " · ".join(parts))
 
     gbp = Path("data/baseline_graph.json")
     gbase = json.loads(gbp.read_text(encoding="utf-8")) if gbp.exists() else {}
@@ -235,12 +214,12 @@ def main(argv: list[str] | None = None) -> int:
         share_of=shares,
         baseline=gbase,
         conglomerate_members=members,
-        retained_earnings=retained,
-        operating_income=op_income,
-        net_income=net,
-        operating_cashflow=cash_flow,
-        interest_cost=interest,
-        fiscal_year=fiscal_year,
+        retained_earnings=fin.retained_earnings,
+        operating_income=fin.operating_income,
+        net_income=fin.net_income,
+        operating_cashflow=fin.operating_cashflow,
+        interest_cost=fin.interest_cost,
+        fiscal_year=fin.fiscal_year,
     )
 
     if not args.no_fetch:
