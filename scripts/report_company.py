@@ -27,10 +27,12 @@ from pathlib import Path
 
 from dartweave.screen.checklist import (
     NOT_CHECKED,
+    WHERE_IN_DART,
     WHERE_TO_READ,
     build,
     evidence_of,
 )
+from dartweave.screen.distribution import position, trend
 from dartweave.dart.live import neighbours
 from dartweave.parse.notes import worth_reading
 from dartweave.screen.flags import ADOPTED_KINDS, screen
@@ -70,12 +72,26 @@ def render(c, extra: dict) -> str:
     우리는 안 한다. 대신 **얼마나 아는가**를 왼쪽 레일의 굵기로 표시한다 —
     잰 것(실선) / 검정 실패(파선) / 아예 못 본 것(점선).
     """
+    context = extra.pop("_context", {})
+
     def card(flag, rail):
         lines, verdict = evidence_of(flag)
         body = "".join(f"<p>{rich(x)}</p>" for x in lines)
+        ctx = context.get(flag.kind)
+        meta = ""
+        if ctx:
+            bits = []
+            if ctx.get("place"):
+                bits.append(f'<span class="where">{rich(ctx["place"])}</span>')
+            if ctx.get("trend"):
+                bits.append(f'<span class="trend">{html.escape(ctx["trend"])}</span>')
+            if bits:
+                meta += f'<div class="meta">{"".join(bits)}</div>'
+            if ctx.get("path"):
+                meta += f'<div class="path">{html.escape(ctx["path"])}</div>'
         return (f'<article class="item {rail}">'
                 f'<div class="kind">{html.escape(flag.kind)}</div>'
-                f'<h3>{rich(flag.summary)}</h3>{body}'
+                f'<h3>{rich(flag.summary)}</h3>{meta}{body}'
                 f'<div class="verdict">{rich(verdict)}</div></article>')
 
     fired = "".join(card(f, "measured") for f in c.fired) or         '<p class="none">채택된 신호에 걸린 항목이 없습니다.</p>'
@@ -163,6 +179,13 @@ h2{{font-family:var(--serif);font-weight:700;font-size:1.35rem;line-height:1.35;
 .item.failed .kind{{color:var(--ink-3)}}
 .item h3{{font-family:var(--sans);font-size:1.02rem;font-weight:600;margin:0;line-height:1.55}}
 .item p{{margin:0;font-size:.9rem;color:var(--ink-2)}}
+.meta{{display:flex;flex-wrap:wrap;gap:.4rem;margin:.1rem 0 .2rem}}
+.meta span{{font-family:var(--mono);font-size:.7rem;letter-spacing:.02em;
+  padding:.12rem .5rem;border-radius:2px}}
+.meta .where{{color:var(--rate);background:var(--sunk)}}
+.meta .trend{{color:var(--ink-2);background:var(--sunk)}}
+.item .path{{font-family:var(--mono);font-size:.7rem;color:var(--ink-3);
+  padding-left:.1rem}}
 .verdict{{font-family:var(--mono);font-size:.76rem;line-height:1.7;color:var(--ink-2);
   border-top:1px solid var(--rule);padding-top:.55rem;margin-top:.15rem}}
 .item b{{color:var(--ink)}}
@@ -273,6 +296,46 @@ footer{{border-top:1px solid var(--rule);padding-top:1.3rem;color:var(--ink-3);
 </footer>
 </div>
 """
+
+
+# 신호 → (어느 파일의 어느 계정, 높을수록 나쁜가). 분포 위치를 낼 때 쓴다.
+METRIC_OF: dict[str, tuple[str, str, bool]] = {
+    "결손금": ("fin", "이익잉여금", False),
+    "영업손실": ("fin", "영업이익", False),
+    "당기순손실": ("fin", "당기순이익(손실)", False),
+    "영업현금흐름 음수": ("cash", "영업활동현금흐름", False),
+}
+
+
+def build_context(code: str, year: str) -> dict[str, dict]:
+    """신호마다 분포 위치·추세·DART 경로를 붙인다.
+
+    분포는 **같은 해 상장사 전수**에서 잰다. 임의 임계 대신 실측 위치를 쓰는 건
+    루브릭에서 이미 하던 방식이고, 여기서는 재무로 옮긴 것뿐이다.
+    """
+    read = lambda f: (json.loads(Path(f).read_text(encoding="utf-8"))  # noqa: E731
+                      if Path(f).exists() else {})
+    store = {"fin": read("data/fin_by_year.json"),
+             "cash": read("data/cashflow_by_year.json")}
+    years = [str(int(year) - k) for k in (3, 2, 1, 0)] if year.isdigit() else []
+
+    out: dict[str, dict] = {}
+    for kind, path in WHERE_IN_DART.items():
+        out[kind] = {"path": path}
+    for kind, (which, account, worse_high) in METRIC_OF.items():
+        book = store[which]
+        mine = (book.get(year, {}).get(code) or {}).get(account)
+        if mine is None:
+            continue
+        others = [float(v[account]) for v in book.get(year, {}).values()
+                  if v.get(account) is not None]
+        pos = position(float(mine), others, higher_is_worse=worse_high)
+        if pos:
+            out[kind]["place"] = pos.label
+        if years:
+            t = trend(book, code, account, years, higher_is_worse=worse_high)
+            out[kind]["trend"] = f"{t.arrow()} · 억원 {t.as_row()}"
+    return out
 
 
 def rank_chokepoints(edges, top: int = 12) -> dict[str, int]:
@@ -393,6 +456,7 @@ def main(argv: list[str] | None = None) -> int:
                 hit += 1
         extra[f"지분으로 엮인 곳 ({args.hops}홉)"] = (
             f"{len(near)}곳 · 그중 채택 신호에 걸린 곳 {hit}곳")
+    extra["_context"] = build_context(code, fin.fiscal_year or "")
     c = build(args.name, code, fin.fiscal_year or "미상", flags, known)
     out = Path(args.out or f"data/report_{args.name}.html")
     out.parent.mkdir(parents=True, exist_ok=True)
