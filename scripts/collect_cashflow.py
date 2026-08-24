@@ -93,7 +93,11 @@ def main(argv: list[str] | None = None) -> int:
         json.loads(OUT.read_text(encoding="utf-8")) if OUT.exists() else {}
     )
     # 이어받기는 이 호출의 마진(전전기) 기준 — 당기로 보면 다른 연도 요청이 통째로 건너뛴다.
-    have = store.get(str(int(args.year) - 2), {})
+    # 이어받기는 **세 항이 다 있는가**로 판단한다. 한 항만 보면 방향에 따라 틀린다 —
+    # 전전기로 보면 최신 연도로 갈 때 건너뛰고, 당기로 보면 뒤로 채울 때 건너뛴다.
+    # 실측으로 둘 다 겪었다(2021년 요청 통째로 스킵 · 2024년이 136사만 수집).
+    years3 = [str(int(args.year) + k) for k in (0, -1, -2)]
+    have = {c for c in codes if all(c in store.get(y, {}) for y in years3)}
     todo = [c for c in codes if c not in have][: args.limit]
     if not todo:
         print(f"{args.year}년은 이어받을 게 없습니다 — {len(have):,}/{len(codes):,}")

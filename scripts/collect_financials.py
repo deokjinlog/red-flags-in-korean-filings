@@ -107,7 +107,13 @@ def main(argv: list[str] | None = None) -> int:
     # 이어받기는 **이 호출이 새로 주는 것** 기준으로 판단한다. 한 번 호출에 당기·전기·
     # 전전기가 오므로 bsns_year=2021 의 마진은 2019년이다. 당기(2021)로 판단하면
     # 2023년 호출이 이미 채워둔 값 때문에 "다 받았다" 며 건너뛴다.
-    have = fin.get(str(int(args.year) - 2), {})
+    # 이어받기는 **세 항이 다 있는가**로 판단한다. 한 번 호출에 당기·전기·전전기가
+    # 오는데, 어느 한 항만 보면 방향에 따라 틀린다 — 전전기로 보면 앞으로(최신 연도)
+    # 갈 때 이미 있다고 건너뛰고, 당기로 보면 뒤로 채울 때 건너뛴다. 실측으로 둘 다
+    # 겪었다(2021년 요청이 통째로 스킵 · 2024년이 136사만 수집).
+    years3 = [str(int(args.year) + k) for k in (0, -1, -2)]
+    have = {c for c in codes
+            if all(c in fin.get(y, {}) for y in years3)}
     todo = [c for c in codes if c not in have][: args.limit]
     if not todo:
         print(f"{args.year}년은 이어받을 게 없습니다 — {len(have):,}/{len(codes):,}")
