@@ -97,6 +97,7 @@ def render(c, extra: dict) -> str:
                 f'<h3>{rich(flag.summary)}</h3>{meta}{body}'
                 f'<div class="verdict">{rich(verdict)}</div></article>')
 
+    moving = drift_line(c, context)
     fired = "".join(card(f, "measured") for f in c.fired) or         '<p class="none">채택된 신호에 걸린 항목이 없습니다.</p>'
     ref = "".join(card(f, "failed") for f in c.reference) or '<p class="none">없음</p>'
     clear = "".join(f"<li>{html.escape(k)}</li>" for k in c.clear) or "<li>없음</li>"
@@ -168,6 +169,10 @@ h2{{font-family:var(--serif);font-weight:700;font-size:1.35rem;line-height:1.35;
   padding:1.5rem 1.6rem;display:flex;flex-direction:column;gap:.8rem}}
 .place .line{{font-family:var(--serif);font-weight:700;font-size:1.18rem;line-height:1.55}}
 .place p{{margin:0;color:var(--ink-2);font-size:.95rem}}
+.place .drift{{margin-top:.55rem;padding-top:.55rem;border-top:1px solid var(--rule)}}
+.scope p{{margin:0;color:var(--ink-2);font-size:.95rem;line-height:1.75;
+  background:var(--sunk);border:1px solid var(--rule);border-radius:2px;padding:.9rem 1rem}}
+.scope b{{color:var(--ink)}}
 .place b{{color:var(--ink)}}
 
 /* 확신의 레일 — 굵기가 아는 정도다 */
@@ -235,12 +240,22 @@ footer{{border-top:1px solid var(--rule);padding-top:1.3rem;color:var(--ink-3);
 <section>
   <div class="place">
     <div class="line">{rich(c.summary)}</div>
+    {moving}
     <p>0개 걸린 회사는 <b>1.3~1.5%</b>, 5개 이상은 <b>7.6~10.8%</b> 가 이후 2년 안에
        부도·회생·관리절차·영업정지·상장폐지로 갔습니다. 그래도 <b>걸린 것의 열에 아홉은
        아무 일도 없었습니다</b> — 이건 "위험" 이 아니라 "여기서 멈추고 이유를 찾아보라"
        는 신호입니다.</p>
   </div>
   <div class="tablewrap"><table><tbody>{facts}</tbody></table></div>
+</section>
+
+<section class="scope">
+  <div class="head"><h2>이 점검표가 답하지 않는 것</h2></div>
+  <p>여기서 나온 숫자는 <b>사지 말 이유가 있는지</b>에만 답합니다. 살 이유는 다루지
+     않습니다 — 주가·PER·목표주가 같은 <b>가격 판단은 아예 넣지 않았고</b>, 수주 잔고,
+     신제품, 업황 사이클, 경영진 역량처럼 공시 숫자표 밖에 있는 것도 보지 않습니다.
+     그래서 <b>0개 걸림이 매수 신호가 아니고</b>, 5개 걸림도 그 자체로는 매도 신호가
+     아닙니다. 걸린 항목은 <b>멈춰서 원문을 열어 볼 자리</b>를 가리킬 뿐입니다.</p>
 </section>
 
 <section>
@@ -358,6 +373,37 @@ def build_context(code: str, year: str) -> dict[str, dict]:
             t = trend(book, code, account, years, higher_is_worse=worse_high)
             out[kind]["trend"] = f"{t.arrow()} · 억원 {t.as_row()}"
     return out
+
+
+def drift_line(c, context: dict[str, dict]) -> str:
+    """걸린 항목이 **나빠지는 중인지 나아지는 중인지** 를 한 줄로 센다.
+
+    같은 5 개가 걸려도 전부 개선 중인 회사와 전부 악화 중인 회사는 다른 이야기다.
+    카드마다 추세를 달아 놨지만 다섯 장을 다 읽어야 보이면 결론에 반영되지 않는다.
+
+    추세를 못 잰 항목은 세지 않는다 — 분모를 아는 것만으로 잡아야 비율이 안 뜬다.
+    """
+    worse = better = flat = 0
+    for f in c.fired:
+        arrow = (context.get(f.kind) or {}).get("trend", "")
+        if arrow.startswith("악화"):
+            worse += 1
+        elif arrow.startswith("개선"):
+            better += 1
+        elif arrow.startswith("거의"):
+            flat += 1
+    known = worse + better + flat
+    if not known:
+        return ""
+    bits = [f"<b>{worse}개가 3년째 나빠지는 중</b>" if worse else "",
+            f"{better}개는 나아지는 중" if better else "",
+            f"{flat}개는 그대로" if flat else ""]
+    body = " · ".join(b for b in bits if b)
+    scope = (f"걸린 {len(c.fired)}개 중 추세를 잴 수 있는 {known}개"
+             if known < len(c.fired) else f"걸린 {known}개 전부")
+    tail = ("최근 3 년 방향은 걸렸다는 사실만큼이나 중요합니다 — "
+            "같은 개수가 걸려도 나아지는 중인 회사와는 다른 이야기입니다.")
+    return f'<p class="drift">{scope}: {body}. {tail}</p>'
 
 
 def rank_chokepoints(edges, top: int = 12) -> dict[str, int]:
