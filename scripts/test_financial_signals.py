@@ -50,7 +50,9 @@ SIGNALS_ORDER = ("완전자본잠식", "부분자본잠식", "자본잠식(완�
                  "이익-현금 괴리", "발생액 상위 25%", "재무CF 연명",
                  "이자보상배율<1 3년 연속", "매출채권+재고 급증",
                  # D축 — 조달 이력. 점검표가 가장 무겁게 치는데 검정된 적이 없다.
-                 "최근 3년 CB·BW 발행", "최근 3년 CB·BW 2회 이상")
+                 "최근 3년 CB·BW 발행", "최근 3년 CB·BW 2회 이상",
+                 # C축 — 오너 리스크. 내부자가 팔고 있나, 최대주주가 자주 바뀌나.
+                 "내부자 매도", "최대주주 변경 최근 3년")
 
 
 def _get(acc: dict, name: str) -> float | None:
@@ -79,6 +81,7 @@ def features(
     history: list[tuple[dict, dict]] | None = None,
     accrual_cut: float | None = None,
     bond_count: int | None = None,
+    insider: dict | None = None,
 ) -> dict[str, bool | None]:
     """재무 신호 후보. 값이 없으면 None — 모르는 걸 '아니다' 로 세지 않는다."""
     equity, capital = _get(acc, "자본총계"), _get(acc, "자본금")
@@ -133,6 +136,17 @@ def features(
         # 목록을 안 받은 상태면 None 이어야지 0 이면 안 된다.
         "최근 3년 CB·BW 발행": None if bond_count is None else bond_count >= 1,
         "최근 3년 CB·BW 2회 이상": None if bond_count is None else bond_count >= 2,
+
+        # ── 오너 리스크 ─────────────────────────────────────────────
+        # 임원·주요주주 소유상황보고의 증감 칸이 음수면 팔았다는 뜻이다.
+        # 보고가 아예 없는 회사는 '안 팔았다' 가 아니라 **모른다** 다.
+        "내부자 매도": (None if not insider or not insider.get("insider")
+                   else any((x.get("delta") or 0) < 0
+                            for x in insider["insider"])),
+        # 최대주주가 최근 3년에 바뀌었나. 변경일로 자른다 — 사업연도로만 자르면
+        # 10년 전 변경 이력까지 딸려 온다.
+        "최대주주 변경 최근 3년": (None if insider is None
+                        else bool(insider.get("_owner_recent"))),
     }
 
 
@@ -214,6 +228,7 @@ def build_features(
     fin_path: str = "data/fin_by_year.json",
     cash_path: str = "data/cashflow_by_year.json",
     bonds_path: str = "data/bond_filings.json",
+    insider_path: str = "data/insider.json",
 ) -> tuple[dict[str, dict], dict[str, float]]:
     """기준시점 하나의 (회사 → 신호 여부, 회사 → 자산총계).
 
@@ -224,6 +239,7 @@ def build_features(
     read = lambda f: (json.loads(Path(f).read_text(encoding="utf-8"))  # noqa: E731
                       if Path(f).exists() else {})
     fin, cash, bonds = read(fin_path), read(cash_path), read(bonds_path)
+    insider = read(insider_path)
     year = str(int(as_of[:4]) - 1)
     acc_now, acc_prev = fin.get(year, {}), fin.get(str(int(year) - 1), {})
     cash_now, cash_prev = cash.get(year, {}), cash.get(str(int(year) - 1), {})
@@ -241,9 +257,21 @@ def build_features(
     accruals = sorted(v for v in (accrual_ratio(acc_now[c], cash_now.get(c, {}))
                                   for c in pool) if v is not None)
     cut = accruals[int(len(accruals) * 0.75)] if len(accruals) >= 20 else None
+    ins_year = insider.get(year, {})
+    cut3 = str(int(as_of[:4]) - 3) + as_of[4:]
+
+    def owner_view(code: str) -> dict | None:
+        rec = ins_year.get(code)
+        if rec is None:
+            return None
+        return {"insider": [x for x in rec["insider"]
+                            if x.get("date") and x["date"] <= as_of],
+                "_owner_recent": any(cut3 <= c.get("on", "") <= as_of
+                                     for c in rec["owner_change"])}
+
     feats = {c: features(acc_now[c], acc_prev.get(c, {}), cash_now.get(c, {}),
                          cash_prev.get(c, {}), hist(c), cut,
-                         counts.get(c, 0) if bonds else None)
+                         counts.get(c, 0) if bonds else None, owner_view(c))
              for c in pool}
     return feats, {c: float(acc_now[c]["자산총계"]) for c in pool}
 
@@ -256,6 +284,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--fin", default="data/fin_by_year.json")
     p.add_argument("--cash", default="data/cashflow_by_year.json")
     p.add_argument("--bonds", default="data/bond_filings.json")
+    p.add_argument("--insider", default="data/insider.json")
     p.add_argument("--industry", default="data/industry.json")
     p.add_argument("--runs", type=int, default=8000)
     p.add_argument("--out", default="data/signal_results.json",
@@ -266,6 +295,7 @@ def main(argv: list[str] | None = None) -> int:
     fin = read(args.fin)
     cash = read(args.cash) if Path(args.cash).exists() else {}
     bonds = read(args.bonds) if Path(args.bonds).exists() else {}
+    insider = read(args.insider) if Path(args.insider).exists() else {}
     industry = {k: str(v) for k, v in read(args.industry).items() if v}
     engine = create_engine(args.db)
 
@@ -282,6 +312,22 @@ def main(argv: list[str] | None = None) -> int:
         for v in bonds.values():
             if v.get("corp_code") and v.get("date", "")[:4] in window:
                 counts[v["corp_code"]] = counts.get(v["corp_code"], 0) + 1
+        # 오너 리스크 — 보고 날짜로 T 이전만 남긴다. 사업연도로만 자르면
+        # 그 해 12월 보고가 6월 기준시점에 딸려 들어온다.
+        ins_year = (insider.get(year, {}) if insider else {})
+        cut3 = str(int(T[:4]) - 3) + T[4:]
+
+        def owner_view(code: str) -> dict | None:
+            rec = ins_year.get(code)
+            if rec is None:
+                return None
+            return {
+                "insider": [x for x in rec["insider"]
+                            if x.get("date") and x["date"] <= T],
+                "_owner_recent": any(cut3 <= c.get("on", "") <= T
+                                     for c in rec["owner_change"]),
+            }
+
         # 3년 연속 판정용 이력 — 당해·전년·전전년
         years3 = [year, str(int(year) - 1), str(int(year) - 2)]
         hist = lambda c: [(fin.get(y, {}).get(c) or {}, cash.get(y, {}).get(c) or {})
@@ -303,7 +349,8 @@ def main(argv: list[str] | None = None) -> int:
         cut = (accruals[int(len(accruals) * 0.75)] if len(accruals) >= 20 else None)
         feats = {c: features(acc_now[c], acc_prev.get(c, {}), cash_now.get(c, {}),
                              cash_prev.get(c, {}), hist(c), cut,
-                             counts.get(c, 0) if bonds else None)
+                             counts.get(c, 0) if bonds else None,
+                             owner_view(c))
                  for c in pool_codes}
         assets = {c: float(acc_now[c]["자산총계"]) for c in feats}
         pool = sorted(c for c in feats if c in industry)

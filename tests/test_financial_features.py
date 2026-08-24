@@ -143,3 +143,22 @@ def test_bond_count_distinguishes_zero_from_unknown():
     assert features(_acc(), {}, _cf(), bond_count=1)["최근 3년 CB·BW 발행"] is True
     assert features(_acc(), {}, _cf(), bond_count=1)["최근 3년 CB·BW 2회 이상"] is False
     assert features(_acc(), {}, _cf(), bond_count=2)["최근 3년 CB·BW 2회 이상"] is True
+
+
+def test_insider_sale_needs_a_report_to_judge():
+    """보고가 없는 회사는 '안 팔았다' 가 아니라 모른다."""
+    assert features(_acc(), {}, _cf(), insider=None)["내부자 매도"] is None
+    assert features(_acc(), {}, _cf(), insider={"insider": []})["내부자 매도"] is None
+    sold = {"insider": [{"delta": -1000}]}
+    held = {"insider": [{"delta": 5000}]}
+    assert features(_acc(), {}, _cf(), insider=sold)["내부자 매도"] is True
+    assert features(_acc(), {}, _cf(), insider=held)["내부자 매도"] is False
+
+
+def test_owner_change_is_a_window_not_a_history():
+    """최대주주 변경은 최근 3년만 본다 — 10년 전 이력까지 세면 거의 전 기업이 걸린다."""
+    assert features(_acc(), {}, _cf(),
+                    insider={"_owner_recent": True})["최대주주 변경 최근 3년"] is True
+    assert features(_acc(), {}, _cf(),
+                    insider={"_owner_recent": False})["최대주주 변경 최근 3년"] is False
+    assert features(_acc(), {}, _cf(), insider=None)["최대주주 변경 최근 3년"] is None
