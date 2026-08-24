@@ -27,10 +27,12 @@ from pathlib import Path
 
 from dartweave.screen.checklist import (
     NOT_CHECKED,
+    READING_ORDER,
     WHERE_IN_DART,
     WHERE_TO_READ,
     build,
     evidence_of,
+    what_it_is,
 )
 from dartweave.screen.distribution import position, trend
 from dartweave.screen.sector import MIN_PEERS, is_shell, name_of, sector_of
@@ -78,6 +80,8 @@ def render(c, extra: dict) -> str:
     def card(flag, rail):
         lines, verdict = evidence_of(flag)
         body = "".join(f"<p>{rich(x)}</p>" for x in lines)
+        what = what_it_is(flag.kind)
+        what = f'<p class="what">{rich(what)}</p>' if what else ""
         ctx = context.get(flag.kind)
         meta = ""
         if ctx:
@@ -94,9 +98,14 @@ def render(c, extra: dict) -> str:
                 meta += f'<div class="path">{html.escape(ctx["path"])}</div>'
         return (f'<article class="item {rail}">'
                 f'<div class="kind">{html.escape(flag.kind)}</div>'
-                f'<h3>{rich(flag.summary)}</h3>{meta}{body}'
+                f'<h3>{rich(flag.summary)}</h3>{what}{meta}{body}'
                 f'<div class="verdict">{rich(verdict)}</div></article>')
 
+    steps = "".join(
+        f'<div class="step"><div class="sn">{html.escape(n)}</div>'
+        f'<div class="sb"><div class="st">{html.escape(t)}</div>'
+        f"<p>{rich(d)}</p></div></div>"
+        for n, t, d in READING_ORDER)
     moving = drift_line(c, context)
     fired = "".join(card(f, "measured") for f in c.fired) or         '<p class="none">채택된 신호에 걸린 항목이 없습니다.</p>'
     ref = "".join(card(f, "failed") for f in c.reference) or '<p class="none">없음</p>'
@@ -170,6 +179,16 @@ h2{{font-family:var(--serif);font-weight:700;font-size:1.35rem;line-height:1.35;
 .place .line{{font-family:var(--serif);font-weight:700;font-size:1.18rem;line-height:1.55}}
 .place p{{margin:0;color:var(--ink-2);font-size:.95rem}}
 .place .drift{{margin-top:.55rem;padding-top:.55rem;border-top:1px solid var(--rule)}}
+.item .what{{margin:.1rem 0 .55rem;color:var(--ink-2);font-size:.93rem;line-height:1.75;
+  padding-left:.7rem;border-left:2px solid var(--rule-2)}}
+.item .what b{{color:var(--ink)}}
+.steps{{display:flex;flex-direction:column;border-top:1px solid var(--rule)}}
+.step{{display:grid;grid-template-columns:2rem 1fr;gap:.9rem;padding:.85rem .1rem;
+  border-bottom:1px solid var(--rule);align-items:start}}
+.sn{{font-family:var(--mono);font-size:1.25rem;color:var(--rule-2);line-height:1.2}}
+.st{{font-weight:600;font-size:.97rem;margin-bottom:.2rem}}
+.step p{{margin:0;color:var(--ink-2);font-size:.93rem;line-height:1.7}}
+.step b{{color:var(--ink)}}
 .scope p{{margin:0;color:var(--ink-2);font-size:.95rem;line-height:1.75;
   background:var(--sunk);border:1px solid var(--rule);border-radius:2px;padding:.9rem 1rem}}
 .scope b{{color:var(--ink)}}
@@ -247,6 +266,13 @@ footer{{border-top:1px solid var(--rule);padding-top:1.3rem;color:var(--ink-3);
        는 신호입니다.</p>
   </div>
   <div class="tablewrap"><table><tbody>{facts}</tbody></table></div>
+</section>
+
+<section class="howto">
+  <div class="head"><h2>이 리포트 읽는 법</h2>
+    <p class="sub">전부 읽어야 쓸 수 있는 문서는 결국 안 읽힙니다. 어디서 멈춰도
+       되는지를 같이 적었습니다.</p></div>
+  <div class="steps">{steps}</div>
 </section>
 
 <section class="scope">
