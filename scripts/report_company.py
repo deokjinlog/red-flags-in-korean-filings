@@ -31,6 +31,7 @@ from dartweave.screen.checklist import (
     build,
     evidence_of,
 )
+from dartweave.dart.live import neighbours
 from dartweave.parse.notes import worth_reading
 from dartweave.screen.flags import ADOPTED_KINDS, screen
 from dartweave.structure.project import project
@@ -289,6 +290,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", default="")
     p.add_argument("--body", default="",
                    help="원문 XML 경로. 주면 그 회사의 실제 주석 번호를 짚어준다")
+    p.add_argument("--live", action="store_true",
+                   help="그 회사 최신 원문을 지금 받아 주석 번호를 짚는다(캐시 일주일)")
+    p.add_argument("--hops", type=int, default=1,
+                   help="지분으로 엮인 이웃을 몇 홉까지 집계할지")
     args = p.parse_args(argv)
 
     names = json.loads(Path("data/corpcode.json").read_text(encoding="utf-8"))
@@ -354,6 +359,40 @@ def main(argv: list[str] | None = None) -> int:
     if args.body and Path(args.body).exists():
         extra["_notes"] = worth_reading(
             Path(args.body).read_text(encoding="utf-8", errors="ignore"))
+    elif args.live:
+        # 조회용은 batch 가 아니다. 원문 8,878건을 미리 받다가 IP 가 차단됐고,
+        # 받고 보니 주석은 정답지가 없어 검정에 못 쓰는 데이터였다.
+        from dartweave.config import Settings
+        from dartweave.dart.client import DartClient
+        from dartweave.dart.live import body_of, latest_report
+        client = DartClient(api_key=Settings.from_env().dart_api_key)
+        try:
+            report = latest_report(client, code)
+            if report:
+                extra["최신 정기보고서"] = (f"{report.get('report_nm', '')} "
+                                    f"({report.get('rcept_dt', '')})")
+                extra["_notes"] = worth_reading(body_of(client, report["rcept_no"]))
+            else:
+                print("  최신 정기보고서를 못 찾았습니다.", file=sys.stderr)
+        except Exception as exc:                          # noqa: BLE001
+            print(f"  원문 조회 실패 — {exc}", file=sys.stderr)
+        finally:
+            client.close()
+
+    # 지분으로 엮인 이웃의 재무를 **집계한다**. 예측이 아니라 사실 진술이다 —
+    # 우리 검정은 구조 신호가 부실을 예고하지 못한다고 나왔고, 그래서 "위험이
+    # 번진다" 고 쓰지 않는다. "엮인 곳 중 몇 곳이 걸렸다" 까지만 센다.
+    near = neighbours(edges, code, hops=args.hops)
+    if near:
+        hit = 0
+        for other in near:
+            nf = load_financials(other)
+            k = known_map(nf, None)
+            if any(k[x] for x in ("결손금", "영업손실", "당기순손실",
+                                  "영업현금흐름 음수", "이자보상배율 1 미만")):
+                hit += 1
+        extra[f"지분으로 엮인 곳 ({args.hops}홉)"] = (
+            f"{len(near)}곳 · 그중 채택 신호에 걸린 곳 {hit}곳")
     c = build(args.name, code, fin.fiscal_year or "미상", flags, known)
     out = Path(args.out or f"data/report_{args.name}.html")
     out.parent.mkdir(parents=True, exist_ok=True)
