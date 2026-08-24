@@ -48,7 +48,9 @@ SIGNALS_ORDER = ("완전자본잠식", "부분자본잠식", "자본잠식(완�
                  "영업현금흐름 음수", "이자보상배율 1 미만",
                  # A축 — 이익의 질. 숫자 조작·좀비기업이 여기서 먼저 드러난다.
                  "이익-현금 괴리", "발생액 상위 25%", "재무CF 연명",
-                 "이자보상배율<1 3년 연속", "매출채권+재고 급증")
+                 "이자보상배율<1 3년 연속", "매출채권+재고 급증",
+                 # D축 — 조달 이력. 점검표가 가장 무겁게 치는데 검정된 적이 없다.
+                 "최근 3년 CB·BW 발행", "최근 3년 CB·BW 2회 이상")
 
 
 def _get(acc: dict, name: str) -> float | None:
@@ -76,6 +78,7 @@ def features(
     prev_cf: dict | None = None,
     history: list[tuple[dict, dict]] | None = None,
     accrual_cut: float | None = None,
+    bond_count: int | None = None,
 ) -> dict[str, bool | None]:
     """재무 신호 후보. 값이 없으면 None — 모르는 걸 '아니다' 로 세지 않는다."""
     equity, capital = _get(acc, "자본총계"), _get(acc, "자본금")
@@ -124,6 +127,12 @@ def features(
         # acc(fin_by_year)에서 찾으면 전 기업이 None 이 되어 조용히 0사로 나온다.
         "매출채권+재고 급증": _working_capital_spike(
             cf or {}, prev_cf or {}, sales, sales_prev),
+
+        # ── 조달 이력 ────────────────────────────────────────────────
+        # 발행 건수는 목록 API 만으로 나온다. **0건과 '모른다' 는 다르다** —
+        # 목록을 안 받은 상태면 None 이어야지 0 이면 안 된다.
+        "최근 3년 CB·BW 발행": None if bond_count is None else bond_count >= 1,
+        "최근 3년 CB·BW 2회 이상": None if bond_count is None else bond_count >= 2,
     }
 
 
@@ -206,6 +215,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--within-days", type=int, default=730)
     p.add_argument("--fin", default="data/fin_by_year.json")
     p.add_argument("--cash", default="data/cashflow_by_year.json")
+    p.add_argument("--bonds", default="data/bond_filings.json")
     p.add_argument("--industry", default="data/industry.json")
     p.add_argument("--runs", type=int, default=8000)
     args = p.parse_args(argv)
@@ -213,6 +223,7 @@ def main(argv: list[str] | None = None) -> int:
     read = lambda f: json.loads(Path(f).read_text(encoding="utf-8"))  # noqa: E731
     fin = read(args.fin)
     cash = read(args.cash) if Path(args.cash).exists() else {}
+    bonds = read(args.bonds) if Path(args.bonds).exists() else {}
     industry = {k: str(v) for k, v in read(args.industry).items() if v}
     engine = create_engine(args.db)
 
@@ -222,6 +233,12 @@ def main(argv: list[str] | None = None) -> int:
         acc_now, acc_prev = fin.get(year, {}), fin.get(str(int(year) - 1), {})
         cash_now = cash.get(year, {})
         cash_prev = cash.get(str(int(year) - 1), {})
+        # T 이전 3년 안의 발행만 센다 — T 이후 발행을 세면 미래를 보는 것이다.
+        window = {str(int(T[:4]) - k) for k in (1, 2, 3)}
+        counts: dict[str, int] = {}
+        for v in bonds.values():
+            if v.get("corp_code") and v.get("date", "")[:4] in window:
+                counts[v["corp_code"]] = counts.get(v["corp_code"], 0) + 1
         # 3년 연속 판정용 이력 — 당해·전년·전전년
         years3 = [year, str(int(year) - 1), str(int(year) - 2)]
         hist = lambda c: [(fin.get(y, {}).get(c) or {}, cash.get(y, {}).get(c) or {})
@@ -242,7 +259,8 @@ def main(argv: list[str] | None = None) -> int:
                                       for c in pool_codes) if v is not None)
         cut = (accruals[int(len(accruals) * 0.75)] if len(accruals) >= 20 else None)
         feats = {c: features(acc_now[c], acc_prev.get(c, {}), cash_now.get(c, {}),
-                             cash_prev.get(c, {}), hist(c), cut)
+                             cash_prev.get(c, {}), hist(c), cut,
+                             counts.get(c, 0) if bonds else None)
                  for c in pool_codes}
         assets = {c: float(acc_now[c]["자산총계"]) for c in feats}
         pool = sorted(c for c in feats if c in industry)

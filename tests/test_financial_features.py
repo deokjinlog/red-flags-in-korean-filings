@@ -134,3 +134,12 @@ def test_working_capital_reads_the_full_statement_not_key_accounts():
     acc, prev = _acc(매출액=200.0, 매출채권=99.0), _acc(매출액=100.0, 매출채권=1.0)
     # 주요계정 쪽에만 넣으면 판정 불가여야 한다 — 거기 있을 수 없는 값이다.
     assert features(acc, prev, _cf(), _cf())["매출채권+재고 급증"] is None
+
+
+def test_bond_count_distinguishes_zero_from_unknown():
+    """목록을 안 받은 상태의 '0건' 을 '발행 없음' 으로 세면 전 기업이 안전해 보인다."""
+    assert features(_acc(), {}, _cf(), bond_count=None)["최근 3년 CB·BW 발행"] is None
+    assert features(_acc(), {}, _cf(), bond_count=0)["최근 3년 CB·BW 발행"] is False
+    assert features(_acc(), {}, _cf(), bond_count=1)["최근 3년 CB·BW 발행"] is True
+    assert features(_acc(), {}, _cf(), bond_count=1)["최근 3년 CB·BW 2회 이상"] is False
+    assert features(_acc(), {}, _cf(), bond_count=2)["최근 3년 CB·BW 2회 이상"] is True
