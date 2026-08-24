@@ -28,12 +28,14 @@ from __future__ import annotations
 import argparse
 import json
 from collections import defaultdict
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from dartweave.db.asof import CensoredWindowError, events_after
+from dartweave.screen.calendar import Due, due_within
 from dartweave.signal.labels import is_distress
 from dartweave.signal.test import (
     Verdict,
@@ -49,6 +51,11 @@ SIGNALS_ORDER = ("완전자본잠식", "부분자본잠식", "자본잠식(완�
                  # A축 — 이익의 질. 숫자 조작·좀비기업이 여기서 먼저 드러난다.
                  "이익-현금 괴리", "발생액 상위 25%", "재무CF 연명",
                  "이자보상배율<1 3년 연속", "매출채권+재고 급증",
+                 # 학계·실무 모형에서 변수만 빌려온 것. 계수는 안 빌린다.
+                 "현금 런웨이 1년 미만", "현금 런웨이 2년 미만", "재무CF 꺾임",
+                 "이익잉여금/자산 하위 25%",
+                 # 자금 캘린더 — 예측이 아니라 날짜와 금액의 뺄셈.
+                 "2년 내 사채 만기 > 보유 현금", "2년 내 만기 사채에 풋옵션",
                  # D축 — 조달 이력. 점검표가 가장 무겁게 치는데 검정된 적이 없다.
                  "최근 3년 CB·BW 발행", "최근 3년 CB·BW 2회 이상",
                  # C축 — 오너 리스크. 내부자가 팔고 있나, 최대주주가 자주 바뀌나.
@@ -80,6 +87,8 @@ def features(
     prev_cf: dict | None = None,
     history: list[tuple[dict, dict]] | None = None,
     accrual_cut: float | None = None,
+    retained_cut: float | None = None,
+    due: Due | None = None,
     bond_count: int | None = None,
     insider: dict | None = None,
 ) -> dict[str, bool | None]:
@@ -90,6 +99,9 @@ def features(
     sales, sales_prev = _get(acc, "매출액"), _get(prev, "매출액")
     ocf = _get(cf or {}, "영업활동현금흐름")
     fcf = _get(cf or {}, "재무활동현금흐름")
+    fcf_prev = _get(prev_cf or {}, "재무활동현금흐름")
+    cash_on_hand = _get(cf or {}, "현금및현금성자산")
+    assets = _get(acc, "자산총계")
     accrual = accrual_ratio(acc, cf)
     return {
         "완전자본잠식": None if equity is None else equity <= 0,
@@ -130,6 +142,41 @@ def features(
         # acc(fin_by_year)에서 찾으면 전 기업이 None 이 되어 조용히 0사로 나온다.
         "매출채권+재고 급증": _working_capital_spike(
             cf or {}, prev_cf or {}, sales, sales_prev),
+
+        # ── 남의 모형에서 변수만 빌려온 것 ──────────────────────────
+        # 회사는 적자라서 죽는 게 아니라 **현금이 마르면** 죽는다. 같은 적자라도
+        # 남은 시간이 다르면 다른 이야기고, 우리 신호 8종은 그걸 안 본다.
+        #
+        # 런웨이(년) = 현금및현금성자산 ÷ 연간 영업CF 소진액. 임계 "1년" 은
+        # 우리가 고른 값이라 2년도 같이 낸다 — 하나만 내면 고른 티가 안 난다.
+        # 안 태우는 회사(ocf ≥ 0)는 False 다. 모르는 게 아니라 해당이 아니다.
+        "현금 런웨이 1년 미만": (None if ocf is None or cash_on_hand is None
+                        else ocf < 0 and cash_on_hand < -ocf),
+        "현금 런웨이 2년 미만": (None if ocf is None or cash_on_hand is None
+                        else ocf < 0 and cash_on_hand < -2 * ocf),
+        # 재무CF 가 (+) 에서 (−) 로 꺾였다 = 빌려주던 쪽이 발을 뺐다.
+        # 이미 있는 "재무CF 연명"(ocf<0 이면서 fcf>0)과 다르다 — 저건 **아직
+        # 대주는 중**이고 이건 **끊긴 해**다.
+        "재무CF 꺾임": (None if fcf is None or fcf_prev is None
+                    else fcf_prev > 0 and fcf < 0),
+        # Altman Z 의 X2 다. 계수는 안 빌리고 변수만 빌린다 — 1968년 미국
+        # 제조업 66개사에서 뽑은 가중치를 한국 상장사에 그대로 얹으면, 실측으로
+        # 바꿔 놓은 판정선을 다시 남의 가정으로 되돌리는 것이다.
+        #
+        # 우리가 이미 채택한 "결손금"(이익잉여금 < 0)의 **규모로 나눈** 판이라,
+        # 둘이 같은 신호인지 다른 신호인지가 여기서 갈린다.
+        "이익잉여금/자산 하위 25%": (None if retained_cut is None or retained is None
+                           or not assets or assets <= 0
+                           else retained / assets <= retained_cut),
+
+        # ── 자금 캘린더 ─────────────────────────────────────────────
+        # 갚아야 할 돈이 가진 돈보다 많은가. 계수도 임계도 없는 뺄셈이다.
+        # 사채가 없는 회사는 0 > 현금 이 거짓이라 자동으로 False 다.
+        "2년 내 사채 만기 > 보유 현금": (None if due is None or cash_on_hand is None
+                             else due.amount > cash_on_hand),
+        # 풋이 붙었으면 만기보다 **이르게** 청구될 수 있다. 청구 가능일은 공시
+        # 본문의 산문이라 못 뽑으니, 붙었는지만 따로 낸다.
+        "2년 내 만기 사채에 풋옵션": None if due is None else due.has_put,
 
         # ── 조달 이력 ────────────────────────────────────────────────
         # 발행 건수는 목록 API 만으로 나온다. **0건과 '모른다' 는 다르다** —
@@ -266,6 +313,7 @@ def build_features(
     fin_path: str = "data/fin_by_year.json",
     cash_path: str = "data/cashflow_by_year.json",
     bonds_path: str = "data/bond_filings.json",
+    terms_path: str = "data/bond_terms.json",
     insider_path: str = "data/insider.json",
 ) -> tuple[dict[str, dict], dict[str, float]]:
     """기준시점 하나의 (회사 → 신호 여부, 회사 → 자산총계).
@@ -277,6 +325,7 @@ def build_features(
     read = lambda f: (json.loads(Path(f).read_text(encoding="utf-8"))  # noqa: E731
                       if Path(f).exists() else {})
     fin, cash, bonds = read(fin_path), read(cash_path), read(bonds_path)
+    terms = read(terms_path)
     insider = read(insider_path)
     year = str(int(as_of[:4]) - 1)
     acc_now, acc_prev = fin.get(year, {}), fin.get(str(int(year) - 1), {})
@@ -288,6 +337,28 @@ def build_features(
         if v.get("corp_code") and v.get("date", "")[:4] in window:
             counts[v["corp_code"]] = counts.get(v["corp_code"], 0) + 1
 
+    # 자금 캘린더 — 기준일 이전에 **발행**된 사채만 모은다. 조항은 접수번호로
+    # 붙는다(bond_terms 는 bond_filings 의 부분집합이라 조항 없는 건은 빠진다).
+    base = date(int(as_of[:4]), int(as_of[4:6]), int(as_of[6:8]))
+    by_corp: dict[str, list[dict]] = defaultdict(list)
+    for rcept, meta in bonds.items():
+        code, filed = meta.get("corp_code"), meta.get("date", "")
+        row = terms.get(rcept)
+        if code and row and filed and filed <= as_of:
+            by_corp[code].append(row)
+    due_of = {c: due_within(rows, base, years=2) for c, rows in by_corp.items()}
+
+    # 자금 캘린더 — 기준일 이전에 **발행**된 사채만 모은다. 조항은 접수번호로
+    # 붙는다(bond_terms 는 bond_filings 의 부분집합이라 조항 없는 건은 빠진다).
+    base = date(int(as_of[:4]), int(as_of[4:6]), int(as_of[6:8]))
+    by_corp: dict[str, list[dict]] = defaultdict(list)
+    for rcept, meta in bonds.items():
+        code, filed = meta.get("corp_code"), meta.get("date", "")
+        row = terms.get(rcept)
+        if code and row and filed and filed <= as_of:
+            by_corp[code].append(row)
+    due_of = {c: due_within(rows, base, years=2) for c, rows in by_corp.items()}
+
     years3 = [year, str(int(year) - 1), str(int(year) - 2)]
     hist = lambda c: [(fin.get(y, {}).get(c) or {}, cash.get(y, {}).get(c) or {})
                       for y in years3]
@@ -295,10 +366,16 @@ def build_features(
     accruals = sorted(v for v in (accrual_ratio(acc_now[c], cash_now.get(c, {}))
                                   for c in pool) if v is not None)
     cut = accruals[int(len(accruals) * 0.75)] if len(accruals) >= 20 else None
+    ratios = sorted(float(acc_now[c]["이익잉여금"]) / float(acc_now[c]["자산총계"])
+                    for c in pool
+                    if acc_now[c].get("이익잉여금") is not None
+                    and float(acc_now[c]["자산총계"]) > 0)
+    r_cut = ratios[int(len(ratios) * 0.25)] if len(ratios) >= 20 else None
     owner_of = _owner_views(insider, as_of)
 
     feats = {c: features(acc_now[c], acc_prev.get(c, {}), cash_now.get(c, {}),
-                         cash_prev.get(c, {}), hist(c), cut,
+                         cash_prev.get(c, {}), hist(c), cut, r_cut,
+                         due_of.get(c, Due(0.0, 0, 0)) if terms else None,
                          counts.get(c, 0) if bonds else None, owner_of(c))
              for c in pool}
     return feats, {c: float(acc_now[c]["자산총계"]) for c in pool}
@@ -312,6 +389,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--fin", default="data/fin_by_year.json")
     p.add_argument("--cash", default="data/cashflow_by_year.json")
     p.add_argument("--bonds", default="data/bond_filings.json")
+    p.add_argument("--terms", default="data/bond_terms.json")
     p.add_argument("--insider", default="data/insider.json")
     p.add_argument("--industry", default="data/industry.json")
     p.add_argument("--runs", type=int, default=8000)
@@ -331,21 +409,6 @@ def main(argv: list[str] | None = None) -> int:
     results: list[dict] = []
     for T in [x.strip() for x in args.as_of.split(",") if x.strip()]:
         year = str(int(T[:4]) - 1)              # T 시점에 이미 공시된 마지막 사업연도
-        acc_now, acc_prev = fin.get(year, {}), fin.get(str(int(year) - 1), {})
-        cash_now = cash.get(year, {})
-        cash_prev = cash.get(str(int(year) - 1), {})
-        # T 이전 3년 안의 발행만 센다 — T 이후 발행을 세면 미래를 보는 것이다.
-        window = {str(int(T[:4]) - k) for k in (1, 2, 3)}
-        counts: dict[str, int] = {}
-        for v in bonds.values():
-            if v.get("corp_code") and v.get("date", "")[:4] in window:
-                counts[v["corp_code"]] = counts.get(v["corp_code"], 0) + 1
-        owner_of = _owner_views(insider, T)
-
-        # 3년 연속 판정용 이력 — 당해·전년·전전년
-        years3 = [year, str(int(year) - 1), str(int(year) - 2)]
-        hist = lambda c: [(fin.get(y, {}).get(c) or {}, cash.get(y, {}).get(c) or {})
-                          for y in years3]
         with Session(engine) as s:
             try:
                 events = events_after(s, T, within_days=args.within_days)
@@ -355,18 +418,13 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"\n{'=' * 74}\nT={T} 건너뜀 — {e}")
                 continue
         label = {e.corp_code for e in events if is_distress(e.event_type)}
-        pool_codes = [c for c in acc_now if acc_now[c].get("자산총계")]
-        # 발생액 상위 25% 는 **그 기준시점 표본 안에서** 자른다. 절대 임계를 쓰면
-        # 연도마다 물가·업황이 달라 같은 뜻이 아니게 된다.
-        accruals = sorted(v for v in (accrual_ratio(acc_now[c], cash_now.get(c, {}))
-                                      for c in pool_codes) if v is not None)
-        cut = (accruals[int(len(accruals) * 0.75)] if len(accruals) >= 20 else None)
-        feats = {c: features(acc_now[c], acc_prev.get(c, {}), cash_now.get(c, {}),
-                             cash_prev.get(c, {}), hist(c), cut,
-                             counts.get(c, 0) if bonds else None,
-                             owner_of(c))
-                 for c in pool_codes}
-        assets = {c: float(acc_now[c]["자산총계"]) for c in feats}
+        # 신호 정의는 `build_features` 한 곳에만 둔다. 여기에 같은 계산을 두 벌로
+        # 갖고 있었는데, 인자를 하나 늘리자마자 위치 인자가 어긋나 조용히 다른 값이
+        # 들어갔다 — 갈라진 정의는 이렇게 티가 안 나게 틀린다.
+        feats, assets = build_features(
+            T, fin_path=args.fin, cash_path=args.cash,
+            bonds_path=args.bonds, terms_path=args.terms,
+            insider_path=args.insider)
         pool = sorted(c for c in feats if c in industry)
 
         print(f"\n{'=' * 74}\nT={T} · {year}년 재무 · 대상 {len(pool):,}사 "
