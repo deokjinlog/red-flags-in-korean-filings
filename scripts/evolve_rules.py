@@ -93,6 +93,58 @@ def score(rule: Rule, frames) -> float:
                for _, f, lb, a, ind in frames)
 
 
+def evolve(rng, atoms, train, population, generations):
+    pop = [random_rule(atoms, rng) for _ in range(population)]
+    best: tuple[float, Rule] = (0.0, pop[0])
+    for _ in range(generations):
+        scored = sorted(((score(r, train), r) for r in pop), key=lambda x: -x[0])
+        if scored[0][0] > best[0]:
+            best = scored[0]
+        elite = [r for _, r in scored[: max(2, population // 4)]]
+        pop = list(elite)
+        while len(pop) < population:
+            pop.append(mutate(rng.choice(elite), atoms, rng) if rng.random() < 0.5
+                       else crossover(rng.choice(elite), rng.choice(elite), rng))
+    return best
+
+
+def survey_seeds(args, train, atoms) -> int:
+    """시드를 흔든다 — 이기는 규칙이 시드마다 다르면 그 규칙을 결론으로 못 쓴다.
+
+    층1 에서 군집 해상도를 흔들어 결론을 반려했고, 관측 창도 흔들었다. 유전
+    알고리즘의 무작위 시드는 **정확히 같은 종류의 파라미터**다. 안 흔들면
+    "우리가 고른 시드에서 나온 규칙" 을 발견이라고 부르게 된다.
+
+    규칙은 못 보고해도 **어떤 원자가 반복해서 살아남는지**는 셀 수 있다.
+    """
+    from collections import Counter
+
+    wins: Counter[str] = Counter()
+    scores = []
+    print(f"시드 {args.seeds}개 · 세대 {args.generations} · 개체 {args.population}\n")
+    for seed in range(1, args.seeds + 1):
+        s, rule = evolve(random.Random(seed), atoms, train,
+                         args.population, args.generations)
+        scores.append(s)
+        for a in {a for g in rule.groups for a in g}:
+            wins[a] += 1
+        print(f"  시드 {seed} · {s:5.2f} · {rule}", flush=True)
+
+    print(f"\n최고 fitness {min(scores):.2f}~{max(scores):.2f} "
+          f"(흔들림 {max(scores) / min(scores):.2f}배)")
+    print(f"\n  {'원자':22s} {'승자에 든 횟수':>12s}")
+    for a, n in wins.most_common():
+        bar = "■" * n
+        print(f"  {a:22s} {n:>7d}/{args.seeds}  {bar}")
+    never = [a for a in atoms if a not in wins]
+    if never:
+        print(f"\n  한 번도 못 든 원자: {', '.join(never)}")
+    print("\n  시드마다 이기는 규칙이 다르면 **그 규칙은 결론이 못 된다.**"
+          "\n  말할 수 있는 건 어떤 원자가 반복해서 살아남는가까지다 —"
+          "\n  층1 에서 '순위와 존재는 말할 수 있고 크기는 말할 수 없다' 고 한 것과 같다.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--train", default="20210630,20220630")
@@ -103,11 +155,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--finalists", type=int, default=5)
     p.add_argument("--runs", type=int, default=4000)
     p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--seeds", type=int, default=0,
+                   help="N>0 이면 시드 1..N 을 돌려 **원자 생존 빈도**만 낸다. "
+                        "시드마다 이기는 규칙이 달라서 특정 규칙은 보고할 수 없다")
     args = p.parse_args(argv)
 
-    rng = random.Random(args.seed)
     train = load([x.strip() for x in args.train.split(",")], args.within_days)
     atoms = list(SIGNALS_ORDER)
+    if args.seeds:
+        return survey_seeds(args, train, atoms)
+    rng = random.Random(args.seed)
     print(f"원자 {len(atoms)}종 · 탐색 시점 {', '.join(t for t, *_ in train)}")
 
     pop = [random_rule(atoms, rng) for _ in range(args.population)]
