@@ -45,6 +45,32 @@ class DartClient:
             self._sleep(self._min_interval - gap)
         self._last_call = time.monotonic()
 
+    def get_document(self, rcept_no: str) -> str:
+        """공시 원문 XML. JSON 이 아니라 ZIP 이 온다 — 상태코드 분기가 통하지 않는다.
+
+        빈 응답이나 오류는 JSON 으로 오므로 매직바이트(`PK`)로 먼저 가른다. 원문은
+        한 건이 7MB 를 넘기도 해서 타임아웃을 따로 준다.
+
+        ⚠️ ZIP 안에 **문서가 여러 개**다. 접수번호 하나에 본문과 별첨이 나뉘어 들어
+        있고, 타법인 출자현황이 별첨 쪽에 있는 경우가 있다. 실측으로 첫 파일만 읽었을
+        때 8건 중 5건에서 추출이 0이 나왔다 — 파일이 2~3개인 걸 못 보고 있었다.
+        전부 이어붙여 돌려준다.
+        """
+        import io
+        import zipfile
+
+        self._throttle()
+        resp = self._http.get("document.xml",
+                              params={"rcept_no": rcept_no, "crtfc_key": self._key},
+                              timeout=120.0)
+        resp.raise_for_status()
+        if resp.content[:2] != b"PK":
+            raise DartApiError(f"원문이 ZIP 이 아니다 (rcept_no={rcept_no}): "
+                               f"{resp.content[:120]!r}")
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
+            return "\n".join(z.read(i.filename).decode("utf-8", errors="ignore")
+                             for i in z.infolist())
+
     def get_json(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
         merged = {**params, "crtfc_key": self._key}
         for attempt in range(self._max_retries + 1):
