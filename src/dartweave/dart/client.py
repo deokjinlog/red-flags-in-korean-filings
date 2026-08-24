@@ -59,11 +59,26 @@ class DartClient:
         import io
         import zipfile
 
-        self._throttle()
-        resp = self._http.get("document.xml",
-                              params={"rcept_no": rcept_no, "crtfc_key": self._key},
-                              timeout=120.0)
-        resp.raise_for_status()
+        # 원문을 대량으로 받으면 서버가 연결을 끊는다(Connection reset by peer).
+        # 파싱 실패처럼 보이지만 수신 실패다 — 실측으로 8,878건 중 7,482건이
+        # 이렇게 빠졌다. get_json 과 같은 재시도를 여기에도 건다.
+        last: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            self._throttle()
+            try:
+                resp = self._http.get(
+                    "document.xml",
+                    params={"rcept_no": rcept_no, "crtfc_key": self._key},
+                    timeout=120.0)
+                resp.raise_for_status()
+                break
+            except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+                last = exc
+                if attempt == self._max_retries:
+                    raise
+                self._sleep(self._backoff_base ** attempt)
+        else:                                            # pragma: no cover
+            raise last or RuntimeError("원문 수신 실패")
         if resp.content[:2] != b"PK":
             raise DartApiError(f"원문이 ZIP 이 아니다 (rcept_no={rcept_no}): "
                                f"{resp.content[:120]!r}")

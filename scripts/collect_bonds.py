@@ -11,6 +11,15 @@
 
 ⚠️ corp_code 없는 기간 검색은 3개월 제한이라 분기로 끊는다 — `collect_events` 와 같다.
 
+⚠️ **원문(document.xml)은 대량 요청을 막는다.** JSON 엔드포인트는 초당 여러 건을
+   받아줬지만 원문은 다르다 — 실측으로 8,878건을 몰아 던졌더니 1,396건 받고 그
+   뒤로 전부 `Connection reset by peer` 였다. 1초 간격에 재시도를 걸어도 안 풀려서
+   그날 안에는 복구되지 않았다. **하루 치를 나눠 받아야 한다.**
+
+   그리고 그 실패를 `{}` 로 저장하면 안 된다. 이어받기가 영영 재시도하지 않고
+   "조항 없음" 으로 굳는다 — 실제로 그렇게 7,482건을 잃을 뻔했다. 받긴 받았는데
+   코드가 없는 경우만 `{}` 로 확정한다.
+
 사용:
     uv run python scripts/collect_bonds.py --years 2019,2020,2021,2022,2023,2024
     uv run python scripts/collect_bonds.py --terms          # 2단계: 조항 읽기
@@ -79,16 +88,19 @@ def collect_terms(client: DartClient, limit: int) -> dict:
     terms: dict[str, dict] = (
         json.loads(TERM_OUT.read_text(encoding="utf-8")) if TERM_OUT.exists() else {}
     )
-    todo = [r for r, v in filings.items()
-            if v.get("corp_code") in universe and r not in terms][:limit]
+    todo = [r for r in filings
+            if filings[r].get("corp_code") in universe and r not in terms][:limit]
     print(f"조항을 읽을 대상 {len(todo):,}건 (전체 {len(filings):,} 중 검정 대상만)")
     for i, rcept in enumerate(todo, 1):
         try:
-            issue = parse_bond(client.get_document(rcept))
+            doc = client.get_document(rcept)
         except Exception as exc:                          # noqa: BLE001
-            print(f"  {rcept} 실패 — {type(exc).__name__}")
-            terms[rcept] = {}
+            # **저장하지 않는다.** 수신 실패를 {} 로 남기면 이어받기가 영영
+            # 재시도하지 않고, 서버가 끊어서 못 받은 걸 "조항 없음" 으로 세게 된다.
+            print(f"  {rcept} 수신 실패 — {type(exc).__name__}", flush=True)
             continue
+        issue = parse_bond(doc)
+        # 받긴 받았는데 코드가 없는 경우만 {} 로 확정한다 — 그건 재시도해도 같다.
         terms[rcept] = asdict(issue) if issue else {}
         if i % 100 == 0:
             TERM_OUT.write_text(json.dumps(terms, ensure_ascii=False), encoding="utf-8")
@@ -103,13 +115,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-pages", type=int, default=40)
     p.add_argument("--terms", action="store_true", help="2단계 — 원문에서 조항 읽기")
     p.add_argument("--limit", type=int, default=4000)
+    p.add_argument("--min-interval", type=float, default=0.15,
+                   help="원문 요청 간격(초). 0 이면 서버가 연결을 끊는다")
     args = p.parse_args(argv)
 
     s = Settings.from_env()
     if not s.dart_api_key:
         print("DART_API_KEY 가 없습니다.", file=sys.stderr)
         return 2
-    client = DartClient(api_key=s.dart_api_key)
+    # 원문 대량 수신은 간격을 둬야 서버가 안 끊는다.
+    client = DartClient(api_key=s.dart_api_key,
+                        min_interval=args.min_interval if args.terms else 0.0)
     try:
         if args.terms:
             terms = collect_terms(client, args.limit)

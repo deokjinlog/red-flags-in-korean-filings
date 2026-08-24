@@ -218,6 +218,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--bonds", default="data/bond_filings.json")
     p.add_argument("--industry", default="data/industry.json")
     p.add_argument("--runs", type=int, default=8000)
+    p.add_argument("--out", default="data/signal_results.json",
+                   help="판정 결과를 기계가 읽을 수 있게 남긴다 — 손으로 옮기면 틀린다")
     args = p.parse_args(argv)
 
     read = lambda f: json.loads(Path(f).read_text(encoding="utf-8"))  # noqa: E731
@@ -228,6 +230,7 @@ def main(argv: list[str] | None = None) -> int:
     engine = create_engine(args.db)
 
     verdicts: dict[str, list[str]] = defaultdict(list)
+    results: list[dict] = []
     for T in [x.strip() for x in args.as_of.split(",") if x.strip()]:
         year = str(int(T[:4]) - 1)              # T 시점에 이미 공시된 마지막 사업연도
         acc_now, acc_prev = fin.get(year, {}), fin.get(str(int(year) - 1), {})
@@ -286,10 +289,17 @@ def main(argv: list[str] | None = None) -> int:
             sup = sum(1 for x in rows[1:] if x[2] is Verdict.SUPPORTED)
             ok = worst[2] is Verdict.SUPPORTED
             verdicts[name].append("채택" if ok else "탈락")
+            results.append({"signal": name, "as_of": T, "n": len(hit),
+                            "events": events_in, "plain_ratio": plain,
+                            "ratio": worst[0], "p_value": worst[1],
+                            "verdict": "채택" if ok else "탈락",
+                            "settings_supported": sup})
             print(f"  {name:16s} {len(hit):>6,} {events_in / len(hit) * 100:6.2f}% "
                   f"×{plain:7.2f} ×{worst[0]:6.2f} {worst[1]:8.4f}  "
                   f"{'채택' if ok else '탈락'} ({sup}/7)")
 
+    Path(args.out).write_text(json.dumps(results, ensure_ascii=False, indent=1),
+                              encoding="utf-8")
     n_dates = len([x for x in args.as_of.split(",") if x.strip()])
     print(f"\n{'=' * 74}\n기준시점 {n_dates}개 **전부**에서 채택된 신호:")
     # 한 시점이라도 판정을 못 했으면 '전부 채택' 이 아니다 — 보류를 통과로 세지 않는다.
