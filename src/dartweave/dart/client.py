@@ -1,6 +1,7 @@
 """DART OpenAPI 클라이언트. 상태코드 분기는 status.classify 한 지점에서만 한다."""
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable
 from typing import Any
@@ -80,8 +81,12 @@ class DartClient:
         else:                                            # pragma: no cover
             raise last or RuntimeError("원문 수신 실패")
         if resp.content[:2] != b"PK":
-            raise DartApiError(f"원문이 ZIP 이 아니다 (rcept_no={rcept_no}): "
-                               f"{resp.content[:120]!r}")
+            # ZIP 이 아니면 오류 JSON 이다. 상태코드를 꺼내 담는다 — 인자를 하나만
+            # 넘기다가 TypeError 가 나서 **진짜 원인이 가려진** 적이 있다.
+            body = resp.content[:200].decode("utf-8", errors="replace")
+            status = re.search(r"<status>(\d+)</status>", body)
+            raise DartApiError(status.group(1) if status else "???",
+                               f"원문이 ZIP 이 아니다 (rcept_no={rcept_no}): {body}")
         with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
             return "\n".join(z.read(i.filename).decode("utf-8", errors="ignore")
                              for i in z.infolist())

@@ -35,7 +35,7 @@ from pathlib import Path
 
 from dartweave.config import Settings
 from dartweave.dart.client import DartClient
-from dartweave.dart.status import Action, classify
+from dartweave.dart.status import Action, DartApiError, classify
 from dartweave.parse.bond import parse_bond
 
 LIST_OUT = Path("data/bond_filings.json")
@@ -94,9 +94,16 @@ def collect_terms(client: DartClient, limit: int) -> dict:
     for i, rcept in enumerate(todo, 1):
         try:
             doc = client.get_document(rcept)
+        except DartApiError as exc:
+            # 서버가 "파일이 존재하지 않습니다"(014) 라고 하면 재시도해도 같다.
+            # **영구 실패는 확정해서 저장한다** — 안 그러면 이어받기가 매번 같은
+            # 건을 다시 집어 영원히 끝나지 않는다. 실측으로 1,194건이 그랬다.
+            print(f"  {rcept} 원문 없음 [{exc.status}]", flush=True)
+            terms[rcept] = {}
+            continue
         except Exception as exc:                          # noqa: BLE001
-            # **저장하지 않는다.** 수신 실패를 {} 로 남기면 이어받기가 영영
-            # 재시도하지 않고, 서버가 끊어서 못 받은 걸 "조항 없음" 으로 세게 된다.
+            # 네트워크 실패는 다르다. {} 로 남기면 서버가 끊어서 못 받은 걸
+            # "조항 없음" 으로 세게 된다 — 저장하지 않고 다음에 다시 시도한다.
             print(f"  {rcept} 수신 실패 — {type(exc).__name__}", flush=True)
             continue
         issue = parse_bond(doc)
