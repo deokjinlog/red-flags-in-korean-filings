@@ -287,8 +287,13 @@ def main(argv: list[str] | None = None) -> int:
     nm = {v: k for k, v in names.items()}
     fin = load_financials(code)
 
+    # ⚠️ 검정용과 조회용은 창이 다르다.
+    #   검정  기준시점 T 이전 3년 — T 이후를 세면 미래를 훔쳐본다
+    #   조회  **오늘 기준** 3년 — 지금 이 종목을 보는 게 목적이라 최신이 맞다
+    # 같은 규칙을 쓰면 2025년 발행 4건이 "창 밖" 이라고 빠진다. 실제로 그랬다.
     bonds = json.loads(Path("data/bond_filings.json").read_text(encoding="utf-8"))
-    window = {str(int(fin.fiscal_year or 0) + k) for k in (0, -1, -2)}
+    latest = max((v.get("date", "") for v in bonds.values()), default="")[:4]
+    window = {str(int(latest or fin.fiscal_year or 0) - k) for k in (0, 1, 2)}
     bond_count = sum(1 for v in bonds.values()
                      if v.get("corp_code") == code and v.get("date", "")[:4] in window)
 
@@ -314,7 +319,8 @@ def main(argv: list[str] | None = None) -> int:
     if known["최근 3년 CB·BW 발행"]:
         flags.append(Flag(
             kind="최근 3년 CB·BW 2회 이상" if bond_count >= 2 else "최근 3년 CB·BW 발행",
-            summary=f"최근 3년 전환사채·신주인수권부사채 **{bond_count}회** 발행",
+            summary=f"최근 3년({min(window)}~{max(window)}) 전환사채·신주인수권부사채 "
+                    f"**{bond_count}회** 발행",
             evidence=["2회 이상인 기업의 이후 2년 부실률 실측 7.5~10.3% "
                       "(규모·업종 통제 후 ×2.5~6.7 · 기준시점 4개)",
                       "└ **채택** · 검정한 24종 중 가장 강한 신호다"]))
@@ -327,7 +333,8 @@ def main(argv: list[str] | None = None) -> int:
         "당기순이익": money(fin.net_income),
         "영업활동현금흐름": money(fin.operating_cashflow),
         "이자비용": money(fin.interest_cost),
-        "최근 3년 CB·BW 발행": f"{bond_count}회" if bonds else "미상",
+        f"CB·BW 발행 ({min(window)}~{max(window)})":
+            f"{bond_count}회" if bonds else "미상",
     }
     c = build(args.name, code, fin.fiscal_year or "미상", flags, known)
     out = Path(args.out or f"data/report_{args.name}.html")
