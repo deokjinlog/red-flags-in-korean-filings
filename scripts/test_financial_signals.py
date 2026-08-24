@@ -45,7 +45,10 @@ from test_isolation_controlled import GRID
 
 SIGNALS_ORDER = ("완전자본잠식", "부분자본잠식", "자본잠식(완전+부분)", "영업손실",
                  "당기순손실", "결손금", "부채비율 200% 초과", "매출 감소",
-                 "영업현금흐름 음수", "이자보상배율 1 미만")
+                 "영업현금흐름 음수", "이자보상배율 1 미만",
+                 # A축 — 이익의 질. 숫자 조작·좀비기업이 여기서 먼저 드러난다.
+                 "이익-현금 괴리", "발생액 상위 25%", "재무CF 연명",
+                 "이자보상배율<1 3년 연속", "매출채권+재고 급증")
 
 
 def _get(acc: dict, name: str) -> float | None:
@@ -66,12 +69,22 @@ def interest_cost(cf: dict) -> float | None:
     return None
 
 
-def features(acc: dict, prev: dict, cf: dict | None = None) -> dict[str, bool | None]:
+def features(
+    acc: dict,
+    prev: dict,
+    cf: dict | None = None,
+    prev_cf: dict | None = None,
+    history: list[tuple[dict, dict]] | None = None,
+    accrual_cut: float | None = None,
+) -> dict[str, bool | None]:
     """재무 신호 후보. 값이 없으면 None — 모르는 걸 '아니다' 로 세지 않는다."""
     equity, capital = _get(acc, "자본총계"), _get(acc, "자본금")
     debt, op = _get(acc, "부채총계"), _get(acc, "영업이익")
     net, retained = _get(acc, "당기순이익(손실)"), _get(acc, "이익잉여금")
     sales, sales_prev = _get(acc, "매출액"), _get(prev, "매출액")
+    ocf = _get(cf or {}, "영업활동현금흐름")
+    fcf = _get(cf or {}, "재무활동현금흐름")
+    accrual = accrual_ratio(acc, cf)
     return {
         "완전자본잠식": None if equity is None else equity <= 0,
         "부분자본잠식": (None if equity is None or capital is None
@@ -91,7 +104,73 @@ def features(acc: dict, prev: dict, cf: dict | None = None) -> dict[str, bool | 
         "이자보상배율 1 미만": (None if not cf or op is None
                         or interest_cost(cf) is None
                         else op < interest_cost(cf)),
+
+        # ── 이익의 질 ────────────────────────────────────────────────
+        # 순이익은 나는데 영업현금은 나간다. 가공매출·밀어내기의 전형이고,
+        # **임계가 없어서** 파라미터를 고를 여지가 없다.
+        "이익-현금 괴리": (None if net is None or ocf is None
+                     else net > 0 and ocf < 0),
+        # 발생액 = 순이익 − 영업CF. 자산으로 나눠 규모를 지운다. 상위 몇 %를
+        # 볼지는 우리가 고른 값이라 스윕 대상이다(accrual_cut).
+        "발생액 상위 25%": (None if accrual_cut is None or accrual is None
+                      else accrual >= accrual_cut),
+        # 영업에서 현금이 나가는데 차입·증자로 버틴다 = 조달이 끊기면 죽는다.
+        "재무CF 연명": (None if ocf is None or fcf is None
+                    else ocf < 0 and fcf > 0),
+        # 3년 내리 이자도 못 갚으면 한계기업(좀비)이다. 한 해 적자보다 무겁다.
+        "이자보상배율<1 3년 연속": _zombie(history),
+        # 매출은 느는데 현금이 안 들어온다 — 매출채권·재고가 매출보다 빨리 는다.
+        # ⚠️ 매출채권·재고는 주요계정이 아니라 **전체 재무제표** 쪽에 있다.
+        # acc(fin_by_year)에서 찾으면 전 기업이 None 이 되어 조용히 0사로 나온다.
+        "매출채권+재고 급증": _working_capital_spike(
+            cf or {}, prev_cf or {}, sales, sales_prev),
     }
+
+
+def accrual_ratio(acc: dict, cf: dict | None) -> float | None:
+    """발생액 비율 = (당기순이익 − 영업활동현금흐름) ÷ 자산총계.
+
+    클수록 "장부 이익이 현금으로 안 들어온다" 는 뜻이다. 자산으로 나누는 이유는
+    큰 회사가 자동으로 상위에 오르는 걸 막기 위해서다 — 우리가 규모를 층화로
+    통제하는 것과 같은 이유고, 여기서는 지표 정의 안에서 지운다.
+    """
+    net = _get(acc, "당기순이익(손실)")
+    assets = _get(acc, "자산총계")
+    ocf = _get(cf or {}, "영업활동현금흐름")
+    if net is None or ocf is None or not assets or assets <= 0:
+        return None
+    return (net - ocf) / assets
+
+
+def _zombie(history: list[tuple[dict, dict]] | None) -> bool | None:
+    """3개 연도 전부 영업이익 < 이자비용인가. 한 해라도 모르면 판정하지 않는다."""
+    if not history or len(history) < 3:
+        return None
+    verdicts = []
+    for acc, cf in history[:3]:
+        op = _get(acc, "영업이익")
+        interest = interest_cost(cf or {})
+        if op is None or interest is None:
+            return None
+        verdicts.append(op < interest)
+    return all(verdicts)
+
+
+def _working_capital_spike(
+    cf: dict, prev_cf: dict, sales: float | None, sales_prev: float | None
+) -> bool | None:
+    """매출채권+재고가 매출보다 빨리 늘었는가.
+
+    매출이 줄었는데 운전자본이 늘어난 경우도 걸린다 — 그쪽이 오히려 더 나쁘다.
+    """
+    now = [_get(cf, k) for k in ("매출채권", "재고자산")]
+    was = [_get(prev_cf, k) for k in ("매출채권", "재고자산")]
+    if any(v is None for v in now + was) or sales is None or sales_prev is None:
+        return None
+    wc_now, wc_was = sum(now), sum(was)
+    if wc_was <= 0 or sales_prev <= 0:
+        return None
+    return (wc_now / wc_was) > (sales / sales_prev) * 1.2
 
 
 def cells_for(pool, assets, industry, label, is_signal, n_strata, digits):
@@ -142,6 +221,11 @@ def main(argv: list[str] | None = None) -> int:
         year = str(int(T[:4]) - 1)              # T 시점에 이미 공시된 마지막 사업연도
         acc_now, acc_prev = fin.get(year, {}), fin.get(str(int(year) - 1), {})
         cash_now = cash.get(year, {})
+        cash_prev = cash.get(str(int(year) - 1), {})
+        # 3년 연속 판정용 이력 — 당해·전년·전전년
+        years3 = [year, str(int(year) - 1), str(int(year) - 2)]
+        hist = lambda c: [(fin.get(y, {}).get(c) or {}, cash.get(y, {}).get(c) or {})
+                          for y in years3]
         with Session(engine) as s:
             try:
                 events = events_after(s, T, within_days=args.within_days)
@@ -151,8 +235,15 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"\n{'=' * 74}\nT={T} 건너뜀 — {e}")
                 continue
         label = {e.corp_code for e in events if is_distress(e.event_type)}
-        feats = {c: features(acc_now[c], acc_prev.get(c, {}), cash_now.get(c, {}))
-                 for c in acc_now if acc_now[c].get("자산총계")}
+        pool_codes = [c for c in acc_now if acc_now[c].get("자산총계")]
+        # 발생액 상위 25% 는 **그 기준시점 표본 안에서** 자른다. 절대 임계를 쓰면
+        # 연도마다 물가·업황이 달라 같은 뜻이 아니게 된다.
+        accruals = sorted(v for v in (accrual_ratio(acc_now[c], cash_now.get(c, {}))
+                                      for c in pool_codes) if v is not None)
+        cut = (accruals[int(len(accruals) * 0.75)] if len(accruals) >= 20 else None)
+        feats = {c: features(acc_now[c], acc_prev.get(c, {}), cash_now.get(c, {}),
+                             cash_prev.get(c, {}), hist(c), cut)
+                 for c in pool_codes}
         assets = {c: float(acc_now[c]["자산총계"]) for c in feats}
         pool = sorted(c for c in feats if c in industry)
 

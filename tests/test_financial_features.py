@@ -71,3 +71,66 @@ def test_debt_ratio_needs_positive_equity():
     assert features(_acc(자본총계=-1.0, 부채총계=100.0), {}, {})["부채비율 200% 초과"] is None
     assert features(_acc(자본총계=10.0, 부채총계=30.0), {}, {})["부채비율 200% 초과"] is True
     assert features(_acc(자본총계=10.0, 부채총계=10.0), {}, {})["부채비율 200% 초과"] is False
+
+
+def _cf(**kw):
+    base = {"영업활동현금흐름": 10.0, "재무활동현금흐름": -5.0, "이자의지급": 1.0}
+    base.update(kw)
+    return base
+
+
+def test_profit_without_cash_is_the_textbook_case():
+    """순이익은 나는데 영업현금은 나간다 — 가공매출·밀어내기의 전형."""
+    f = features(_acc(**{"당기순이익(손실)": 50.0}), {}, _cf(영업활동현금흐름=-20.0))
+    assert f["이익-현금 괴리"] is True
+    # 둘 다 마이너스면 '괴리' 가 아니라 그냥 적자다
+    g = features(_acc(**{"당기순이익(손실)": -50.0}), {}, _cf(영업활동현금흐름=-20.0))
+    assert g["이익-현금 괴리"] is False
+
+
+def test_accrual_ratio_divides_by_assets():
+    """규모를 지우지 않으면 큰 회사가 자동으로 상위에 온다."""
+    from test_financial_signals import accrual_ratio
+
+    small = accrual_ratio(_acc(자산총계=100.0, **{"당기순이익(손실)": 10.0}), _cf(영업활동현금흐름=0.0))
+    big = accrual_ratio(_acc(자산총계=10_000.0, **{"당기순이익(손실)": 100.0}), _cf(영업활동현금흐름=0.0))
+    assert small > big                       # 절대액은 big 이 10배인데 비율은 small 이 크다
+    assert accrual_ratio(_acc(자산총계=0.0), _cf()) is None      # 0 으로 안 나눈다
+
+
+def test_financing_lifeline_needs_both_legs():
+    """영업에서 나가고 재무로 들어와야 '연명' 이다. 한쪽만으로는 아니다."""
+    assert features(_acc(), {}, _cf(영업활동현금흐름=-1.0, 재무활동현금흐름=1.0))["재무CF 연명"] is True
+    assert features(_acc(), {}, _cf(영업활동현금흐름=-1.0, 재무활동현금흐름=-1.0))["재무CF 연명"] is False
+    assert features(_acc(), {}, _cf(영업활동현금흐름=1.0, 재무활동현금흐름=1.0))["재무CF 연명"] is False
+
+
+def test_zombie_needs_three_known_years():
+    """한 해라도 모르면 '3년 연속' 을 주장할 수 없다."""
+    bad = (_acc(영업이익=1.0), _cf(이자의지급=9.0))
+    good = (_acc(영업이익=9.0), _cf(이자의지급=1.0))
+    assert features(_acc(), {}, _cf(), history=[bad, bad, bad])["이자보상배율<1 3년 연속"] is True
+    assert features(_acc(), {}, _cf(), history=[bad, good, bad])["이자보상배율<1 3년 연속"] is False
+    assert features(_acc(), {}, _cf(), history=[bad, bad])["이자보상배율<1 3년 연속"] is None
+    unknown = (_acc(영업이익=1.0), {})
+    assert features(_acc(), {}, _cf(), history=[bad, bad, unknown])["이자보상배율<1 3년 연속"] is None
+
+
+def test_working_capital_spike_is_relative_to_sales():
+    """매출이 같이 늘었으면 급증이 아니다 — 매출 대비로 봐야 한다."""
+    acc, prev = _acc(매출액=200.0), _acc(매출액=100.0)
+    was = _cf(매출채권=10.0, 재고자산=10.0)
+    up = _cf(매출채권=30.0, 재고자산=30.0)          # 운전자본 3배 vs 매출 2배
+    flat = _cf(매출채권=15.0, 재고자산=15.0)        # 1.5배 — 매출 증가폭 안
+    assert features(acc, prev, up, was)["매출채권+재고 급증"] is True
+    assert features(acc, prev, flat, was)["매출채권+재고 급증"] is False
+
+
+def test_working_capital_reads_the_full_statement_not_key_accounts():
+    """실측 사고 — 매출채권을 주요계정에서 찾다가 전 기업이 None 이 되어 0사로 나왔다.
+
+    '해당 기업 0사' 는 '그런 회사가 없다' 가 아니라 '못 읽었다' 였다.
+    """
+    acc, prev = _acc(매출액=200.0, 매출채권=99.0), _acc(매출액=100.0, 매출채권=1.0)
+    # 주요계정 쪽에만 넣으면 판정 불가여야 한다 — 거기 있을 수 없는 값이다.
+    assert features(acc, prev, _cf(), _cf())["매출채권+재고 급증"] is None

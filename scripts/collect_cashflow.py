@@ -45,6 +45,18 @@ WANTED: dict[str, tuple[str, ...]] = {
     "이자비용": ("dart_AdjustmentsForInterestExpenses",
              "ifrs-full_AdjustmentsForInterestExpense"),
     "금융원가": ("ifrs-full_FinanceCosts",),
+    # 재무CF 로 연명하는가 — 영업에서 현금이 나가는데 차입·증자로 버티면
+    # "조달이 끊기면 죽는 회사" 다.
+    "재무활동현금흐름": ("ifrs-full_CashFlowsFromUsedInFinancingActivities",
+                  "ifrs_CashFlowsFromUsedInFinancingActivities"),
+    "투자활동현금흐름": ("ifrs-full_CashFlowsFromUsedInInvestingActivities",),
+    # 매출은 느는데 현금이 안 들어오는가 — 회전율 악화가 여기서 나온다.
+    "매출채권": ("ifrs-full_CurrentTradeReceivables",
+             "dart_ShortTermTradeReceivable",
+             "ifrs-full_TradeAndOtherCurrentReceivables"),
+    "재고자산": ("ifrs-full_Inventories",),
+    "현금및현금성자산": ("ifrs-full_CashAndCashEquivalents",
+                 "dart_CashAndCashEquivalentsAtEndOfPeriod"),
 }
 
 
