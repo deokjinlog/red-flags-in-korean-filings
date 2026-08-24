@@ -162,3 +162,33 @@ def test_owner_change_is_a_window_not_a_history():
     assert features(_acc(), {}, _cf(),
                     insider={"_owner_recent": False})["최대주주 변경 최근 3년"] is False
     assert features(_acc(), {}, _cf(), insider=None)["최대주주 변경 최근 3년"] is None
+
+
+def test_owner_views_cut_by_date_not_by_fiscal_year():
+    """실측 사고 — 2023 사업연도 자료에 접수일 2024-10 보고가 들어 있었다.
+
+    연도 키로만 자르면 T=2024-06 에서 그게 딸려 오거나(미래 훔쳐보기),
+    반대로 통째로 비어버린다. 처음엔 후자였고 '해당 0사' 로 조용히 나왔다.
+    """
+    from test_financial_signals import _owner_views
+
+    store = {"2023": {"A": {"insider": [{"date": "20241002", "who": "x", "delta": -10},
+                                        {"date": "20240301", "who": "y", "delta": -20}],
+                            "owner_change": [{"on": "20170916"}]}}}
+    view = _owner_views(store, "20240630")("A")
+    dates = [x["date"] for x in view["insider"]]
+    assert dates == ["20240301"]              # 2024-10 보고는 아직 모르는 정보
+    assert view["_owner_recent"] is False     # 2017년 변경은 최근 3년 밖
+
+
+def test_owner_views_pool_across_collected_years():
+    """한 회사의 보고가 여러 사업연도 파일에 흩어져 있다 — 모아야 날짜로 자를 수 있다."""
+    from test_financial_signals import _owner_views
+
+    store = {"2022": {"A": {"insider": [{"date": "20230115", "who": "x", "delta": -1}],
+                            "owner_change": []}},
+             "2023": {"A": {"insider": [{"date": "20240115", "who": "y", "delta": -2}],
+                            "owner_change": [{"on": "20230501"}]}}}
+    view = _owner_views(store, "20240630")("A")
+    assert len(view["insider"]) == 2 and view["_owner_recent"] is True
+    assert _owner_views(store, "20240630")("없는회사") is None

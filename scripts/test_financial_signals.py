@@ -140,6 +140,9 @@ def features(
         # ── 오너 리스크 ─────────────────────────────────────────────
         # 임원·주요주주 소유상황보고의 증감 칸이 음수면 팔았다는 뜻이다.
         # 보고가 아예 없는 회사는 '안 팔았다' 가 아니라 **모른다** 다.
+        # ⚠️ 지금은 항상 None 이다 — `elestock.json` 이 bsns_year 를 무시하고 현재
+        # 이력만 줘서 T 이전 접수 보고가 0건이다. 정의는 남겨두지만 데이터가 시점
+        # 분리를 못 해 검정이 불가능하다. `collect_insider` 참조.
         "내부자 매도": (None if not insider or not insider.get("insider")
                    else any((x.get("delta") or 0) < 0
                             for x in insider["insider"])),
@@ -222,6 +225,41 @@ def sweep(pool, assets, industry, label, is_signal, runs):
     return rows, None
 
 
+def _owner_views(insider: dict, as_of: str):
+    """오너 리스크를 **날짜로** 자른다 — 사업연도 키로는 안 된다.
+
+    `elestock` 은 사업연도로 묶여 오지만 각 보고의 접수일은 그 안에 있지 않다.
+    실측으로 2023 사업연도 자료에 접수일 2024-10-02 인 보고가 들어 있었고,
+    T=2024-06-30 기준으로 그건 아직 모르는 정보다. 연도 키만 쓰면 **미래를
+    훔쳐보거나(늦은 보고를 당겨쓰거나) 통째로 비어버린다** — 처음엔 후자였고
+    '내부자 매도 해당 0사' 로 조용히 나왔다.
+
+    그래서 수집한 모든 연도를 한데 모아 날짜로 자른다. 최대주주 변경은 최근 3년
+    창으로 본다 — 전체 이력을 세면 거의 전 기업이 걸린다.
+    """
+    cut3 = str(int(as_of[:4]) - 3) + as_of[4:]
+    pooled: dict[str, dict[str, list]] = {}
+    for rows in insider.values():
+        for code, rec in rows.items():
+            slot = pooled.setdefault(code, {"insider": [], "owner_change": []})
+            slot["insider"].extend(rec.get("insider") or [])
+            slot["owner_change"].extend(rec.get("owner_change") or [])
+
+    def view(code: str) -> dict | None:
+        rec = pooled.get(code)
+        if rec is None:
+            return None
+        seen = {(x.get("date"), x.get("who"), x.get("delta")) for x in rec["insider"]}
+        return {
+            "insider": [{"date": d, "who": w, "delta": v} for d, w, v in seen
+                        if d and d <= as_of],
+            "_owner_recent": any(cut3 <= (c.get("on") or "") <= as_of
+                                 for c in rec["owner_change"]),
+        }
+
+    return view
+
+
 def build_features(
     as_of: str,
     *,
@@ -257,21 +295,11 @@ def build_features(
     accruals = sorted(v for v in (accrual_ratio(acc_now[c], cash_now.get(c, {}))
                                   for c in pool) if v is not None)
     cut = accruals[int(len(accruals) * 0.75)] if len(accruals) >= 20 else None
-    ins_year = insider.get(year, {})
-    cut3 = str(int(as_of[:4]) - 3) + as_of[4:]
-
-    def owner_view(code: str) -> dict | None:
-        rec = ins_year.get(code)
-        if rec is None:
-            return None
-        return {"insider": [x for x in rec["insider"]
-                            if x.get("date") and x["date"] <= as_of],
-                "_owner_recent": any(cut3 <= c.get("on", "") <= as_of
-                                     for c in rec["owner_change"])}
+    owner_of = _owner_views(insider, as_of)
 
     feats = {c: features(acc_now[c], acc_prev.get(c, {}), cash_now.get(c, {}),
                          cash_prev.get(c, {}), hist(c), cut,
-                         counts.get(c, 0) if bonds else None, owner_view(c))
+                         counts.get(c, 0) if bonds else None, owner_of(c))
              for c in pool}
     return feats, {c: float(acc_now[c]["자산총계"]) for c in pool}
 
@@ -312,21 +340,7 @@ def main(argv: list[str] | None = None) -> int:
         for v in bonds.values():
             if v.get("corp_code") and v.get("date", "")[:4] in window:
                 counts[v["corp_code"]] = counts.get(v["corp_code"], 0) + 1
-        # 오너 리스크 — 보고 날짜로 T 이전만 남긴다. 사업연도로만 자르면
-        # 그 해 12월 보고가 6월 기준시점에 딸려 들어온다.
-        ins_year = (insider.get(year, {}) if insider else {})
-        cut3 = str(int(T[:4]) - 3) + T[4:]
-
-        def owner_view(code: str) -> dict | None:
-            rec = ins_year.get(code)
-            if rec is None:
-                return None
-            return {
-                "insider": [x for x in rec["insider"]
-                            if x.get("date") and x["date"] <= T],
-                "_owner_recent": any(cut3 <= c.get("on", "") <= T
-                                     for c in rec["owner_change"]),
-            }
+        owner_of = _owner_views(insider, T)
 
         # 3년 연속 판정용 이력 — 당해·전년·전전년
         years3 = [year, str(int(year) - 1), str(int(year) - 2)]
@@ -350,7 +364,7 @@ def main(argv: list[str] | None = None) -> int:
         feats = {c: features(acc_now[c], acc_prev.get(c, {}), cash_now.get(c, {}),
                              cash_prev.get(c, {}), hist(c), cut,
                              counts.get(c, 0) if bonds else None,
-                             owner_view(c))
+                             owner_of(c))
                  for c in pool_codes}
         assets = {c: float(acc_now[c]["자산총계"]) for c in feats}
         pool = sorted(c for c in feats if c in industry)
