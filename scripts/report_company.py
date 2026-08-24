@@ -33,6 +33,7 @@ from dartweave.screen.checklist import (
     evidence_of,
 )
 from dartweave.screen.distribution import position, trend
+from dartweave.screen.sector import MIN_PEERS, is_shell, name_of, sector_of
 from dartweave.dart.live import neighbours
 from dartweave.parse.notes import worth_reading
 from dartweave.screen.flags import ADOPTED_KINDS, screen
@@ -83,6 +84,8 @@ def render(c, extra: dict) -> str:
             bits = []
             if ctx.get("place"):
                 bits.append(f'<span class="where">{rich(ctx["place"])}</span>')
+            if ctx.get("peer"):
+                bits.append(f'<span class="peer">{rich(ctx["peer"])}</span>')
             if ctx.get("trend"):
                 bits.append(f'<span class="trend">{html.escape(ctx["trend"])}</span>')
             if bits:
@@ -184,6 +187,7 @@ h2{{font-family:var(--serif);font-weight:700;font-size:1.35rem;line-height:1.35;
   padding:.12rem .5rem;border-radius:2px}}
 .meta .where{{color:var(--rate);background:var(--sunk)}}
 .meta .trend{{color:var(--ink-2);background:var(--sunk)}}
+.meta .peer{{color:var(--ink-2);background:var(--sunk)}}
 .item .path{{font-family:var(--mono);font-size:.7rem;color:var(--ink-3);
   padding-left:.1rem}}
 .verdict{{font-family:var(--mono);font-size:.76rem;line-height:1.7;color:var(--ink-2);
@@ -312,11 +316,19 @@ def build_context(code: str, year: str) -> dict[str, dict]:
 
     분포는 **같은 해 상장사 전수**에서 잰다. 임의 임계 대신 실측 위치를 쓰는 건
     루브릭에서 이미 하던 방식이고, 여기서는 재무로 옮긴 것뿐이다.
+
+    전수 위치만으로는 모자란 데가 있다. 조선·건설은 영업현금흐름이 음수인 해가
+    흔하고 제약은 영업손실이 흔하다 — 같은 숫자가 업종에 따라 다른 뜻이다. 그래서
+    **업종 내 위치**를 나란히 낸다. 업종 표본이 `MIN_PEERS` 미만이면 내지 않는다.
     """
     read = lambda f: (json.loads(Path(f).read_text(encoding="utf-8"))  # noqa: E731
                       if Path(f).exists() else {})
     store = {"fin": read("data/fin_by_year.json"),
              "cash": read("data/cashflow_by_year.json")}
+    industry = read("data/industry.json")
+    mine_sector = sector_of(industry.get(code))
+    named = {v: k for k, v in read("data/corpcode.json").items()}
+    shell = {c for c in named if is_shell(named[c])}
     years = [str(int(year) - k) for k in (3, 2, 1, 0)] if year.isdigit() else []
 
     out: dict[str, dict] = {}
@@ -327,11 +339,21 @@ def build_context(code: str, year: str) -> dict[str, dict]:
         mine = (book.get(year, {}).get(code) or {}).get(account)
         if mine is None:
             continue
-        others = [float(v[account]) for v in book.get(year, {}).values()
-                  if v.get(account) is not None]
+        others = [float(v[account]) for c, v in book.get(year, {}).items()
+                  if v.get(account) is not None and c not in shell]
         pos = position(float(mine), others, higher_is_worse=worse_high)
         if pos:
             out[kind]["place"] = pos.label
+        if mine_sector:
+            peers = [float(v[account])
+                     for c, v in book.get(year, {}).items()
+                     if v.get(account) is not None and c not in shell
+                     and sector_of(industry.get(c)) == mine_sector]
+            ppos = position(float(mine), peers, higher_is_worse=worse_high,
+                            min_sample=MIN_PEERS)
+            if ppos:
+                out[kind]["peer"] = ppos.describe(
+                    f"{name_of(mine_sector)} {ppos.sample}사")
         if years:
             t = trend(book, code, account, years, higher_is_worse=worse_high)
             out[kind]["trend"] = f"{t.arrow()} · 억원 {t.as_row()}"

@@ -17,8 +17,8 @@ def test_direction_flips_for_metrics_where_low_is_bad():
 
 
 def test_small_sample_refuses_to_place():
-    p = position(1.0, [0.0, 2.0, 3.0])
-    assert "적다" in p.label
+    """예전엔 '표본이 적다' 라벨을 냈다 — 그건 위치가 아니라 변명이라 안 낸다."""
+    assert position(1.0, [0.0, 2.0, 3.0]) is None
 
 
 def test_missing_value_is_not_placed():
@@ -47,3 +47,18 @@ def test_missing_year_stays_none_not_zero():
     t = trend(store, "A", "부채총계", ["2022", "2023"])
     assert t.values == [None, 100.0]
     assert "—" in t.as_row()
+
+
+def test_small_sample_yields_no_position():
+    """숫자 몇 개로 만든 백분위는 위치가 아니라 잡음이다."""
+    few = [1.0, 2.0, 3.0]
+    assert position(2.5, few) is None                    # 기본 하한 50
+    assert position(2.5, few, min_sample=2) is not None   # 업종처럼 낮춰 쓸 때만
+
+
+def test_describe_names_the_comparison_group():
+    """전체 분포와 업종 분포는 다른 이야기다 — 어느 쪽인지 라벨이 밝혀야 한다."""
+    pos = position(100.0, [float(v) for v in range(60)], min_sample=2)
+    assert pos is not None
+    assert pos.describe().startswith("상장사 중")
+    assert pos.describe("전자·반도체 240사").startswith("전자·반도체 240사 중")

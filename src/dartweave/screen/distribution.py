@@ -24,28 +24,42 @@ class Position:
     percentile: float          # 낮을수록 좋은 지표 기준 — 0 이 가장 좋고 100 이 가장 나쁘다
     sample: int
 
-    @property
-    def label(self) -> str:
-        if self.sample < 50:
-            return f"표본 {self.sample}사 — 위치를 말하기엔 적다"
+    def describe(self, group: str = "상장사") -> str:
+        """비교 대상을 이름으로 받는다.
+
+        "상장사 중" 을 박아 두면 업종 내 비교를 같은 라벨로 낼 수 없다 — 전체
+        분포와 업종 분포는 다른 이야기고, 어느 쪽인지 안 밝히면 읽는 쪽이 섞는다.
+        """
         top = 100.0 - self.percentile
         if top <= 5:
-            return f"상장사 중 **상위 {top:.0f}%** (나쁜 쪽)"
+            return f"{group} 중 **상위 {top:.0f}%** (나쁜 쪽)"
         if top <= 25:
-            return f"상장사 중 상위 {top:.0f}%"
+            return f"{group} 중 상위 {top:.0f}%"
         if self.percentile <= 25:
-            return f"상장사 중 하위 {self.percentile:.0f}% (좋은 쪽)"
-        return f"상장사 중 상위 {top:.0f}% — 중간대"
+            return f"{group} 중 하위 {self.percentile:.0f}% (좋은 쪽)"
+        return f"{group} 중 상위 {top:.0f}% — 중간대"
+
+    @property
+    def label(self) -> str:
+        return self.describe()
+
+
+MIN_SAMPLE = 50
+"""전체 분포에서 위치를 말하려면 이만큼은 있어야 한다."""
 
 
 def position(value: float | None, others: list[float], *,
-             higher_is_worse: bool = True) -> Position | None:
+             higher_is_worse: bool = True,
+             min_sample: int = MIN_SAMPLE) -> Position | None:
     """실측 분포 안의 위치. 임의 임계를 쓰지 않는다.
 
     `higher_is_worse` 가 False 면(예: 영업이익·현금) 낮을수록 나쁜 지표라 뒤집는다.
     뒤집지 않으면 "영업손실이 큰데 하위 5%(좋은 쪽)" 같은 소리가 나온다.
+
+    `min_sample` 은 업종 내 비교처럼 표본이 작아지는 곳에서 낮춰 쓴다. 숫자 몇 개로
+    만든 백분위는 위치가 아니라 잡음이라, 하한 밑이면 아예 내지 않는다.
     """
-    if value is None or len(others) < 2:
+    if value is None or len(others) < max(2, min_sample):
         return None
     ordered = sorted(others)
     below = sum(1 for v in ordered if v < value)
