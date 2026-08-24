@@ -31,6 +31,7 @@ from dartweave.screen.checklist import (
     build,
     evidence_of,
 )
+from dartweave.parse.notes import worth_reading
 from dartweave.screen.flags import ADOPTED_KINDS, screen
 from dartweave.structure.project import project
 from dartweave.screen.inputs import load_financials
@@ -82,9 +83,16 @@ def render(c, extra: dict) -> str:
     unknown = "".join(f"<li>{html.escape(k)}</li>" for k in c.unknown) or "<li>없음</li>"
     notchk = "".join(f'<div class="unread"><div class="t">{html.escape(t)}</div>'
                      f"<p>{html.escape(d)}</p></div>" for t, d in NOT_CHECKED)
-    where = "".join(f"<tr><td class='t'>{html.escape(t)}</td>"
-                    f"<td class='path'>{html.escape(d)}</td></tr>"
-                    for t, d in WHERE_TO_READ)
+    notes = extra.pop("_notes", [])
+    if notes:
+        where = "".join(
+            f"<tr><td class='t'>주석 {html.escape(n.number)}. "
+            f"{html.escape(n.title)}</td><td>{html.escape(n.why)}</td></tr>"
+            for n in notes)
+    else:
+        where = "".join(f"<tr><td class='t'>{html.escape(t)}</td>"
+                        f"<td class='path'>{html.escape(d)}</td></tr>"
+                        for t, d in WHERE_TO_READ)
     facts = "".join(f"<tr><td class='t'>{html.escape(k)}</td>"
                     f"<td class='num'>{html.escape(v)}</td></tr>"
                     for k, v in extra.items())
@@ -247,7 +255,12 @@ footer{{border-top:1px solid var(--rule);padding-top:1.3rem;color:var(--ink-3);
 </section>
 
 <section>
-  <div class="head"><h2>다음에 사람이 읽을 곳</h2></div>
+  <div class="head">
+    <h2>다음에 사람이 읽을 곳</h2>
+    <p class="sub">주석은 우리가 <b>읽지 않습니다</b> — 표가 전치되고 다층이라
+       결정적으로 못 뽑고, 대조할 정답지가 없어 추출 품질도 못 잽니다. 대신 7백만 자
+       중 <b>어디를 볼지</b>는 정확히 짚어드립니다.</p>
+  </div>
   <div class="tablewrap"><table><tbody>{where}</tbody></table></div>
 </section>
 
@@ -274,6 +287,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--name", required=True)
     p.add_argument("--graph", default="data/graph_listed.json")
     p.add_argument("--out", default="")
+    p.add_argument("--body", default="",
+                   help="원문 XML 경로. 주면 그 회사의 실제 주석 번호를 짚어준다")
     args = p.parse_args(argv)
 
     names = json.loads(Path("data/corpcode.json").read_text(encoding="utf-8"))
@@ -336,6 +351,9 @@ def main(argv: list[str] | None = None) -> int:
         f"CB·BW 발행 ({min(window)}~{max(window)})":
             f"{bond_count}회" if bonds else "미상",
     }
+    if args.body and Path(args.body).exists():
+        extra["_notes"] = worth_reading(
+            Path(args.body).read_text(encoding="utf-8", errors="ignore"))
     c = build(args.name, code, fin.fiscal_year or "미상", flags, known)
     out = Path(args.out or f"data/report_{args.name}.html")
     out.parent.mkdir(parents=True, exist_ok=True)
