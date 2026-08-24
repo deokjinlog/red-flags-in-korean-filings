@@ -24,22 +24,29 @@ from dartweave.db.asof import CensoredWindowError, events_after
 from dartweave.signal.labels import is_distress
 from dartweave.signal.usefulness import lift_ci, usefulness
 
+def _neg(acc, key):
+    v = acc.get(key)
+    return v is not None and float(v) < 0
+
+
 SIGNALS = {
-    "결손금": lambda a: float(a["이익잉여금"]) < 0,
-    "영업손실": lambda a: a.get("영업이익") is not None and float(a["영업이익"]) < 0,
-    "당기순손실": lambda a: (a.get("당기순이익(손실)") is not None
-                        and float(a["당기순이익(손실)"]) < 0),
-    "영업현금흐름 음수": lambda a: (a.get("영업활동현금흐름") is not None
-                            and float(a["영업활동현금흐름"]) < 0),
-    "셋 중 하나라도": lambda a: any((
-        float(a["이익잉여금"]) < 0,
-        a.get("영업이익") is not None and float(a["영업이익"]) < 0,
-        a.get("당기순이익(손실)") is not None and float(a["당기순이익(손실)"]) < 0,
+    "결손금": lambda a: _neg(a, "이익잉여금"),
+    "영업손실": lambda a: _neg(a, "영업이익"),
+    "당기순손실": lambda a: _neg(a, "당기순이익(손실)"),
+    "영업현금흐름 음수": lambda a: _neg(a, "영업활동현금흐름"),
+    "이자보상배율<1": lambda a: (
+        a.get("영업이익") is not None
+        and any(a.get(k) for k in ("이자의지급", "이자비용", "금융원가"))
+        and float(a["영업이익"]) < next(float(a[k]) for k in
+                                    ("이자의지급", "이자비용", "금융원가") if a.get(k))
+    ),
+    "다섯 중 하나라도": lambda a: any((
+        _neg(a, "이익잉여금"), _neg(a, "영업이익"), _neg(a, "당기순이익(손실)"),
+        _neg(a, "영업활동현금흐름"),
     )),
-    "셋 다": lambda a: all((
-        float(a["이익잉여금"]) < 0,
-        a.get("영업이익") is not None and float(a["영업이익"]) < 0,
-        a.get("당기순이익(손실)") is not None and float(a["당기순이익(손실)"]) < 0,
+    "다섯 다": lambda a: all((
+        _neg(a, "이익잉여금"), _neg(a, "영업이익"), _neg(a, "당기순이익(손실)"),
+        _neg(a, "영업활동현금흐름"),
     )),
 }
 
