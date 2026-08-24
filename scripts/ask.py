@@ -134,20 +134,25 @@ def main(argv=None) -> int:
             print(f"  공동의존점  {' · '.join(entry['shared_chokepoints'][:3])}")
         adopted = [f for f in flags if is_adopted(f.kind)]
         rest = [f for f in flags if not is_adopted(f.kind)]
+        # 개수를 먼저 낸다 — 사람이 점검표를 쓰는 방식이 그렇고, 그 자체가 검정됐다.
+        known = sum(1 for k in ADOPTED_KINDS
+                    if k != "영업현금흐름 음수" or fin.operating_cashflow is not None)
+        print(f"\n  {flag_count_summary(len(adopted), known)}")
         if adopted:
             print(f"\n  ── 검정 통과 ({len(adopted)}건 · 부실과의 연관이 확인된 것만) ──")
             for f in adopted:
                 print(f"  [{f.kind}] {f.summary}")
                 for line in f.evidence[:2]:
                     print(f"      {line}")
+        else:
+            # 참고 항목보다 **먼저** 낸다. 뒤에 두면 '없음' 이 참고에 딸린 말로 읽힌다.
+            print("\n  ── 검정 통과한 항목 없음 ──")
+            print("  채택된 재무 신호에 하나도 안 걸렸다는 뜻이다. "
+                  "'안전' 이 아니라 '이 검사에는 안 걸림' 이다.")
         if rest:
             print("\n  ── 걸렸지만 검정 미통과 (참고) ──")
             for f in rest:
                 print(f"  [{f.kind}] {f.summary}")
-        if not adopted:
-            print("\n  ── 검정 통과한 항목 없음 ──")
-            print("  채택된 재무 신호 다섯 개에 하나도 안 걸렸다는 뜻이다. "
-                  "'안전' 이 아니라 '이 검사에는 안 걸림' 이다.")
 
     blob = json.dumps(payload, ensure_ascii=False)
     print(f"\n── 모델에 넘길 것 ──")

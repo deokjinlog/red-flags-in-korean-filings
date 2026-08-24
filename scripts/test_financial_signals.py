@@ -386,17 +386,24 @@ def main(argv: list[str] | None = None) -> int:
                       f"   판정 불가 — 신호군 부실 {events_in}건")
                 continue
             plain = rows[0][0]
+            # **두 가지 "가장 보수적" 을 따로 쓴다.**
+            #   채택 여부  p 가 가장 큰 설정 — "제일 안 유의한 설정에서도 유의한가"
+            #   보고 배율  배율이 가장 작은 설정 — 이건 순열과 무관해 결정적이다
+            # 하나로 묶었더니 p 가 순열 추정이라 실행마다 뽑히는 설정이 바뀌고,
+            # 보고 배율이 흔들렸다(영업손실 ×1.96 ↔ ×2.14). 근거 숫자가 실행마다
+            # 다르면 문서에 적을 수 없다.
             worst = max(rows[1:], key=lambda x: x[1])
+            floor = min(rows[1:], key=lambda x: x[0])
             sup = sum(1 for x in rows[1:] if x[2] is Verdict.SUPPORTED)
             ok = worst[2] is Verdict.SUPPORTED
             verdicts[name].append("채택" if ok else "탈락")
             results.append({"signal": name, "as_of": T, "n": len(hit),
                             "events": events_in, "plain_ratio": plain,
-                            "ratio": worst[0], "p_value": worst[1],
+                            "ratio": floor[0], "p_value": worst[1],
                             "verdict": "채택" if ok else "탈락",
                             "settings_supported": sup})
             print(f"  {name:16s} {len(hit):>6,} {events_in / len(hit) * 100:6.2f}% "
-                  f"×{plain:7.2f} ×{worst[0]:6.2f} {worst[1]:8.4f}  "
+                  f"×{plain:7.2f} ×{floor[0]:6.2f} {worst[1]:8.4f}  "
                   f"{'채택' if ok else '탈락'} ({sup}/7)")
 
     Path(args.out).write_text(json.dumps(results, ensure_ascii=False, indent=1),
