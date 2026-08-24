@@ -208,6 +208,46 @@ def sweep(pool, assets, industry, label, is_signal, runs):
     return rows, None
 
 
+def build_features(
+    as_of: str,
+    *,
+    fin_path: str = "data/fin_by_year.json",
+    cash_path: str = "data/cashflow_by_year.json",
+    bonds_path: str = "data/bond_filings.json",
+) -> tuple[dict[str, dict], dict[str, float]]:
+    """기준시점 하나의 (회사 → 신호 여부, 회사 → 자산총계).
+
+    `main` 안에 있던 걸 빼냈다 — 개수 검정 쪽에서 같은 계산을 다시 쓰는데,
+    두 벌로 두면 신호 정의가 갈라진다. 실제로 `check_company` 와 `ask` 가
+    그렇게 갈라진 적이 있다.
+    """
+    read = lambda f: (json.loads(Path(f).read_text(encoding="utf-8"))  # noqa: E731
+                      if Path(f).exists() else {})
+    fin, cash, bonds = read(fin_path), read(cash_path), read(bonds_path)
+    year = str(int(as_of[:4]) - 1)
+    acc_now, acc_prev = fin.get(year, {}), fin.get(str(int(year) - 1), {})
+    cash_now, cash_prev = cash.get(year, {}), cash.get(str(int(year) - 1), {})
+
+    window = {str(int(as_of[:4]) - k) for k in (1, 2, 3)}
+    counts: dict[str, int] = {}
+    for v in bonds.values():
+        if v.get("corp_code") and v.get("date", "")[:4] in window:
+            counts[v["corp_code"]] = counts.get(v["corp_code"], 0) + 1
+
+    years3 = [year, str(int(year) - 1), str(int(year) - 2)]
+    hist = lambda c: [(fin.get(y, {}).get(c) or {}, cash.get(y, {}).get(c) or {})
+                      for y in years3]
+    pool = [c for c in acc_now if acc_now[c].get("자산총계")]
+    accruals = sorted(v for v in (accrual_ratio(acc_now[c], cash_now.get(c, {}))
+                                  for c in pool) if v is not None)
+    cut = accruals[int(len(accruals) * 0.75)] if len(accruals) >= 20 else None
+    feats = {c: features(acc_now[c], acc_prev.get(c, {}), cash_now.get(c, {}),
+                         cash_prev.get(c, {}), hist(c), cut,
+                         counts.get(c, 0) if bonds else None)
+             for c in pool}
+    return feats, {c: float(acc_now[c]["자산총계"]) for c in pool}
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--db", default="sqlite:///data/timeseries.db")

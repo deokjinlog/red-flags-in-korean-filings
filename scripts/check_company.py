@@ -23,7 +23,13 @@ from dartweave.dart.status import Action, classify
 from dartweave.parse.structured_rel import parse_investment, parse_major_shareholder
 from dartweave.resolve.aliases import load_aliases
 from dartweave.resolve.resolver import Resolver
-from dartweave.screen.flags import funding_rarity, screen, trade_rarity
+from dartweave.screen.flags import (
+    ADOPTED_KINDS,
+    flag_count_summary,
+    funding_rarity,
+    screen,
+    trade_rarity,
+)
 from dartweave.screen.inputs import load_financials
 from dartweave.structure.interpret import allowed_tokens, build_prompt
 from dartweave.structure.project import project
@@ -235,6 +241,11 @@ def main(argv: list[str] | None = None) -> int:
         flags += [f for f in (funding_rarity(reports, base.get("funding")),
                               trade_rarity(reports, base.get("trade")))
                   if f is not None]
+
+    fired = sum(1 for f in flags if f.kind in ADOPTED_KINDS)
+    known = sum(1 for k in ADOPTED_KINDS
+                if k != "영업현금흐름 음수" or fin.operating_cashflow is not None)
+    print(f"\n{flag_count_summary(fired, known)}")
 
     if not flags:
         print("\n걸린 항목 없음")

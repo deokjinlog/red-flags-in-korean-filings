@@ -494,3 +494,22 @@ def test_negative_coverage_ratio_is_not_printed_as_a_number():
     loss = interest_coverage_below_one(-78_200_000_000, 9_300_000_000, year="2023")
     assert loss and "배" not in loss.summary.split("—")[1].split("(")[0]
     assert "영업손실이라" in loss.summary
+
+
+def test_flag_count_bands_are_measured_not_invented():
+    """개수 구간의 부실률은 실측값이다 — 임의 등급이 아니다."""
+    from dartweave.screen.flags import ADOPTED_KINDS, flag_count_summary
+
+    assert len(ADOPTED_KINDS) == 5
+    zero = flag_count_summary(0, 5)
+    many = flag_count_summary(6, 5)
+    assert "0개" in zero and "1.3~1.5%" in zero
+    assert "5개 이상" in many and "7.6~10.8%" in many
+
+
+def test_flag_count_says_when_it_could_not_judge():
+    """재무를 못 받아 못 센 신호가 있으면 '0개' 가 안전을 뜻하지 않는다."""
+    from dartweave.screen.flags import flag_count_summary
+
+    assert "판정 못 함" in flag_count_summary(0, 3)
+    assert "판정 못 함" not in flag_count_summary(0, 5)

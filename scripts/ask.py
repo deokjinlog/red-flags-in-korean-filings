@@ -20,7 +20,12 @@ import argparse, json, sys
 from collections import deque
 from pathlib import Path
 
-from dartweave.screen.flags import is_adopted, screen
+from dartweave.screen.flags import (
+    ADOPTED_KINDS,
+    flag_count_summary,
+    is_adopted,
+    screen,
+)
 from dartweave.screen.inputs import load_financials
 from dartweave.structure.interpret import allowed_tokens, build_prompt
 from dartweave.structure.project import project

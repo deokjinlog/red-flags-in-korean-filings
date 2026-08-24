@@ -567,6 +567,42 @@ def interest_coverage_below_one(
     )
 
 
+# 4개 기준시점 전부에서 채택된 신호. 개수를 셀 때 이것만 센다 —
+# 미검정·반려 신호를 섞으면 개수가 뜻을 잃는다.
+ADOPTED_KINDS: tuple[str, ...] = (
+    "결손금", "당기순손실", "영업손실", "영업현금흐름 음수",
+    "이자보상배율 1 미만",
+)
+
+# 걸린 개수 → (실측 부실률 범위, 기준시점 4개). 개수 검정 실측값이다.
+_COUNT_RATE: tuple[tuple[int, str], ...] = (
+    (0, "1.3~1.5%"),
+    (1, "1.6~2.7%"),
+    (2, "2.0~6.6%"),
+    (3, "0.7~4.2%"),
+    (4, "2.0~6.8%"),
+    (5, "7.6~10.8%"),
+)
+
+
+def flag_count_summary(fired: int, known: int) -> str:
+    """몇 개나 걸렸는가 — 사람이 점검표를 쓰는 방식 그대로.
+
+    신호를 하나씩 검정해왔지만, 실제 사용은 "쭉 훑고 몇 개 걸렸나" 다. 그것도
+    검정했다 — 1·2·3·4개 이상 전부 네 기준시점에서 채택됐고 배율은 ×1.9~4.9 다.
+
+    중간 구간(2~4개)의 실측 부실률은 들쭉날쭉하다. 구간마다 140~230사뿐이라
+    표본이 얇아서다. **양 끝은 네 시점 모두 안정적이다** — 0개는 1.3~1.5%,
+    5개 이상은 7.6~10.8% 로 5~7배 차이가 난다.
+    """
+    band = next(r for n, r in reversed(_COUNT_RATE) if fired >= n)
+    tag = f"{fired}개" if fired < 5 else "5개 이상"
+    note = ("" if known >= len(ADOPTED_KINDS)
+            else f" · 재무를 못 받아 {len(ADOPTED_KINDS) - known}종은 판정 못 함")
+    return (f"채택 신호 {len(ADOPTED_KINDS)}종 중 **{tag}** 걸림 — "
+            f"이 구간의 실측 부실률 {band} (기준시점 4개){note}")
+
+
 def screen(
     edges: list[tuple[str, str, str]],
     corp_code: str,
