@@ -27,6 +27,7 @@ from pathlib import Path
 from dartweave.config import Settings
 from dartweave.dart.client import DartClient
 from dartweave.dart.status import Action, classify
+from dartweave.screen.audit import term_year
 
 OUT = Path("data/audit_opinions.json")
 
@@ -61,8 +62,11 @@ def main(argv: list[str] | None = None) -> int:
                                  "reprt_code": "11011"})
             if classify(str(r.get("status", ""))) is Action.OK:
                 for it in (r.get("list") or []):
+                    term = re.sub(r"\s+", "", str(it.get("bsns_year", "")))
                     rows.append({
-                        "term": re.sub(r"\s+", "", str(it.get("bsns_year", ""))),
+                        "term": term,
+                        # stlm_dt 는 세 기수에 전부 같은 값이 붙는다 — 연도로 못 쓴다.
+                        "year": term_year(term, int(args.year)),
                         "opinion": str(it.get("adt_opinion", "")).strip(),
                         "emphasis": str(it.get("emphs_matter", ""))[:200],
                         "stlm_dt": str(it.get("stlm_dt", "")),

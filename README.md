@@ -1,4 +1,6 @@
-# red-flags-in-korean-filings
+# 돌다리 · 주식
+
+<sub>`doldari-stock` — 형제: [돌다리 · 부동산](https://github.com/deokjinlog/doldari-property) (등기부·공공데이터로 보증금 날릴 위험 잡기)</sub>
 
 전자공시로 **"이 회사 사도 되나"** 에 근거를 대려던 기록이다.
 상장사 8,974개사 · 지분 관계 54,569건 · 부실 라벨 810건 · 기준시점 4개.
