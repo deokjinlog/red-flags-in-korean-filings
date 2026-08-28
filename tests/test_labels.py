@@ -3,7 +3,7 @@ from dartweave.signal.labels import DISTRESS_TYPES, is_distress
 
 
 def test_dart_distress_types_count():
-    for t in ("부도", "회생", "관리절차", "파산", "영업정지"):
+    for t in ("부도", "회생", "관리절차", "파산"):
         assert is_distress(t)
 
 
@@ -34,4 +34,18 @@ def test_unknown_type_is_not_distress():
 
 def test_no_type_is_both_counted_and_excluded():
     assert "해산(부실아님)" not in DISTRESS_TYPES
-    assert len(DISTRESS_TYPES) == 9
+    assert len(DISTRESS_TYPES) == 8
+
+
+def test_business_suspension_is_excluded():
+    """금융회사의 영업정지는 당국 제재지 부실이 아니다.
+
+    답안지에 신한은행(557조)·하나은행(532조·21건)·우리은행이 들어가 있었다.
+    빼니까 신호가 전부 강해졌다 — 오염이 신호를 깎고 있었다.
+    """
+    from dartweave.signal.labels import EXCLUDED_AMBIGUOUS, is_distress
+    assert not is_distress("영업정지")
+    assert "영업정지" in EXCLUDED_AMBIGUOUS
+    # 진짜 부실은 그대로 센다
+    for t in ("부도", "회생", "관리절차", "파산", "상장폐지(감사의견)"):
+        assert is_distress(t), t
