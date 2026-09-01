@@ -531,3 +531,42 @@ def test_flag_count_says_when_it_could_not_judge():
 
     assert "판정 못 함" in flag_count_summary(0, 3)
     assert "판정 못 함" not in flag_count_summary(0, 5)
+
+
+def test_audit_layer_narrows_within_the_same_count():
+    """같은 5개 걸림 안에서 감사 경고 유무가 5.2% 와 43.5% 로 가른다."""
+    from dartweave.screen.flags import audit_split
+
+    warned = audit_split(5, "concern", "2023")
+    clean = audit_split(5, "none", "2023")
+    assert "43.5%" in warned and "2023 사업연도" in warned
+    assert "5.2%" in clean and "8분의 1" in clean
+    # 둘 다 깨끗하면 실측 부실 0건이었다 — 그 사실을 그대로 낸다.
+    assert "0건" in audit_split(0, "none", "2023")
+
+
+def test_missing_audit_is_not_absence_of_warning():
+    """감사의견을 못 받은 것과 경고가 없는 것은 다르다 — 섞으면 안전해 보인다."""
+    from dartweave.screen.flags import audit_split
+
+    unknown = audit_split(5, None)
+    assert "모릅니다" in unknown and "덜 아는 것" in unknown
+    # 걸린 개수와 무관하게 '5개 걸린' 이라고 말하면 안 된다.
+    assert "같은 5개 걸린" not in audit_split(0, None)
+
+
+def test_audit_year_is_stamped_because_it_lags_the_financials():
+    """감사의견은 2023 한 해분뿐이라 재무(2024)와 다른 해다 — 안 밝히면 같은 해로 읽힌다."""
+    from dartweave.screen.flags import audit_split
+
+    assert "2023 사업연도" in audit_split(3, "concern", "2023")
+    assert "기준시점 1개" in audit_split(3, "concern", "2023")
+
+
+def test_korean_particle_agrees_with_the_final_jamo():
+    """'계속기업 경고이 있습니다' 같은 게 나오면 안 된다."""
+    from dartweave.screen.flags import _subject
+
+    assert _subject("계속기업 경고") == "계속기업 경고가"
+    assert _subject("의견거절·한정") == "의견거절·한정이"
+    assert _subject("CB") == "CB가"          # 한글이 아니면 기본형

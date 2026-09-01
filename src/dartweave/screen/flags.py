@@ -785,3 +785,76 @@ def trade_rarity(
 ) -> Flag | None:
     """계열사 내부거래를 실측 분포 위에 놓는다."""
     return _counted_flag(reports, TRADE_KEYWORDS, "계열사 내부거래", dist, 1)
+
+
+# 감사보고서가 같은 구간 안에서 가르는 정도 (T=20240630 · 감사의견 보유 2,073사 ·
+# 전체 부실률 2.56%).
+#
+# ⚠️ **기준시점 1개다.** 감사의견을 2023 결산 한 해분만 받아 놔서 다른 신호처럼
+#    두 시점에서 흔들어보지 못했다. 화면에 그렇게 적힌다 — 안 적으면 두 시점에서
+#    확인한 값처럼 읽힌다.
+#
+# 결손금 걸린 562사(8.0%)를 감사로 나눈 값이다:
+_AUDIT_IN_DEFICIT: dict[str, tuple[int, float, str]] = {
+    "adverse": (40, 40.0, "의견거절·한정"),
+    "concern": (32, 18.8, "계속기업 경고"),
+    "none": (490, 4.7, "감사 경고 없음"),
+}
+# 신호 5개 구간에서는 훨씬 크게 갈린다 — 여기가 이 층의 값어치다.
+_AUDIT_AT_FIVE = (249, 5.2, 46, 43.5)
+# 그리고 둘 다 깨끗하면 실측 부실 0건이었다.
+_AUDIT_CLEAN_ZERO = (914, 0.0)
+
+
+def _subject(word: str) -> str:
+    """받침에 맞는 주격 조사를 붙인다 — "계속기업 경고이" 같은 게 나오면 안 된다.
+
+    한글 음절은 0xAC00 부터 28 자씩 한 묶음이고 그 안에서 종성이 0 이면 받침이 없다.
+    라벨을 사람이 늘릴 때마다 조사를 손으로 맞추면 언젠가 어긋난다.
+    """
+    last = word.strip()[-1]
+    if not ("가" <= last <= "힣"):
+        return f"{word}가"
+    return f"{word}{'이' if (ord(last) - 0xAC00) % 28 else '가'}"
+
+
+def audit_split(fired: int, audit: str | None, year: str | None = None) -> str:
+    """감사인이 뭐라고 썼는지가 같은 개수 안에서 가른다.
+
+    `audit` 는 'adverse'(의견거절·한정) / 'concern'(계속기업 경고) / 'none'(경고 없음)
+    / None(감사의견을 못 받음). **None 을 'none' 으로 세면 안 된다** — 못 받은 것과
+    경고가 없는 것은 다르다.
+
+    `year` 는 그 판정이 어느 사업연도 것인지다. 재무와 다른 해일 수 있어서 —
+    감사의견을 2023 한 해분만 받아 놨다 — 어느 해인지 밝히지 않으면 같은 해로 읽힌다.
+    """
+    if audit is None:
+        n_ok, r_ok, n_bad, r_bad = _AUDIT_AT_FIVE
+        return ("감사보고서를 받지 못해 **감사인이 뭐라 썼는지 모릅니다.** "
+                f"신호 5개가 걸린 회사끼리도 감사 경고 유무로 {r_ok:.1f}%와 "
+                f"{r_bad:.1f}%로 갈립니다 — 이 칸이 비면 그만큼 덜 아는 것입니다.")
+    stamp = f"{year} 사업연도 감사보고서 · " if year else ""
+    if audit == "none" and fired == 0:
+        n, rate = _AUDIT_CLEAN_ZERO
+        return (f"{stamp}감사인도 아무 경고를 달지 않았습니다. "
+                f"**신호 0개 + 감사 경고 없음**"
+                f"이었던 {n}사 중 이후 2년 안에 부실로 간 곳은 "
+                f"**{rate:.0f}건**이었습니다 (기준시점 1개).")
+    if fired >= 5:
+        n_ok, r_ok, n_bad, r_bad = _AUDIT_AT_FIVE
+        if audit == "none":
+            return (f"{stamp}**감사인은 경고를 달지 않았습니다.** 같은 5개 걸렸는데 "
+                    f"감사 경고가 없던 {n_ok}사의 부실률은 {r_ok:.1f}%로, 경고가 "
+                    f"있던 {n_bad}사({r_bad:.1f}%)의 8분의 1이었습니다 (기준시점 1개).")
+        n, rate, label = _AUDIT_IN_DEFICIT[audit]
+        marked = _subject(label).replace(label, f"**{label}**", 1)
+        return (f"{stamp}{marked} 있습니다. 같은 5개 걸렸고 감사 "
+                f"경고까지 있던 {n_bad}사 중 {r_bad:.1f}%가 부실로 갔습니다 — 경고가 "
+                f"없던 {n_ok}사는 {r_ok:.1f}%였습니다 (기준시점 1개).")
+    n, rate, label = _AUDIT_IN_DEFICIT[audit]
+    if audit == "none":
+        return ""          # 신호가 적고 경고도 없으면 더 할 말이 없다
+    marked = _subject(label).replace(label, f"**{label}**", 1)
+    return (f"{stamp}{marked} 있습니다. 결손금이 있으면서 같은 표기를 "
+            f"받았던 {n}사 중 {rate:.1f}%가 이후 2년 안에 부실로 갔습니다 — 결손금만 "
+            f"있고 감사 경고는 없던 490사는 4.7%였습니다 (기준시점 1개).")

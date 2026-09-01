@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from dartweave.screen.flags import (
     ADOPTED_KINDS,
     Flag,
+    audit_split,
     direction_split,
     flag_count_summary,
     is_adopted,
@@ -130,6 +131,8 @@ class Checklist:
     unknown: list[str] = field(default_factory=list)         # 판정 못 한 채택 신호
     reference: list[Flag] = field(default_factory=list)      # 검정 미통과 · 참고
     worsening: bool | None = None    # 이익잉여금 3년 방향. None = 판정 못 함
+    audit: str | None = None         # 'adverse'/'concern'/'none'. None = 감사의견 못 받음
+    audit_year: str | None = None    # 그 감사의견이 어느 사업연도 것인가
 
     @property
     def summary(self) -> str:
@@ -145,10 +148,21 @@ class Checklist:
         """
         return direction_split(len(self.fired), self.worsening)
 
+    @property
+    def auditor(self) -> str:
+        """감사인이 뭐라고 썼는지. 같은 5개 걸림 안에서 5.2% 와 43.5% 로 가른다.
+
+        표에 안 나오고 문장으로만 있어서 대개 안 읽히는 칸이다 — 부실 상장폐지의
+        절반이 넘는 게 감사의견인데도.
+        """
+        return audit_split(len(self.fired), self.audit, self.audit_year)
+
 
 def build(name: str, corp_code: str, fiscal_year: str, flags: list[Flag],
           known: dict[str, bool | None],
-          worsening: bool | None = None) -> Checklist:
+          worsening: bool | None = None,
+          audit: str | None = None,
+          audit_year: str | None = None) -> Checklist:
     """`screen()` 결과를 네 덩어리로 가른다.
 
     `known` 은 채택 신호별 판정 결과다(True/False/None). **걸린 것만으로는 부족하다** —
@@ -167,6 +181,8 @@ def build(name: str, corp_code: str, fiscal_year: str, flags: list[Flag],
                  if k not in fired_kinds and known.get(k) is None],
         reference=[f for f in flags if not is_adopted(f.kind)],
         worsening=worsening,
+        audit=audit,
+        audit_year=audit_year,
     )
 
 

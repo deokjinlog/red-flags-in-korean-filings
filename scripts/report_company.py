@@ -34,6 +34,11 @@ from dartweave.screen.checklist import (
     evidence_of,
     what_it_is,
 )
+from dartweave.screen.audit import (
+    has_going_concern,
+    normalize_opinion,
+    rows_for_year,
+)
 from dartweave.screen.distribution import position, trend
 from dartweave.screen.sector import MIN_PEERS, is_shell, name_of, sector_of
 from dartweave.dart.live import neighbours
@@ -107,6 +112,7 @@ def render(c, extra: dict) -> str:
         f"<p>{rich(d)}</p></div></div>"
         for n, t, d in READING_ORDER)
     split = (f'<p class="split">{rich(c.drift)}</p>' if c.drift else "")
+    audited = (f'<p class="split">{rich(c.auditor)}</p>' if c.auditor else "")
     moving = drift_line(c, context)
     fired = "".join(card(f, "measured") for f in c.fired) or         '<p class="none">채택된 신호에 걸린 항목이 없습니다.</p>'
     ref = "".join(card(f, "failed") for f in c.reference) or '<p class="none">없음</p>'
@@ -264,6 +270,7 @@ footer{{border-top:1px solid var(--rule);padding-top:1.3rem;color:var(--ink-3);
   <div class="place">
     <div class="line">{rich(c.summary)}</div>
     {split}
+    {audited}
     {moving}
     <p>0개 걸린 회사는 <b>1.3~1.5%</b>, 5개 이상은 <b>7.6~10.8%</b> 가 이후 2년 안에
        부도·회생·관리절차·영업정지·상장폐지로 갔습니다. 그래도 <b>걸린 것의 열에 아홉은
@@ -404,6 +411,32 @@ def build_context(code: str, year: str) -> dict[str, dict]:
             t = trend(book, code, account, years, higher_is_worse=worse_high)
             out[kind]["trend"] = f"{t.arrow()} · 억원 {t.as_row()}"
     return out
+
+
+def audit_state(code: str, year: str) -> tuple[str | None, str | None]:
+    """그 사업연도 감사의견을 세 값으로. 못 받았으면 None — 'none' 과 다르다.
+
+    나쁜 쪽부터 본다. 의견거절 본문에도 계속기업 이야기가 들어 있어서, 경고를
+    먼저 보면 의견거절이 계속기업 경고로 내려앉는다.
+    """
+    path = Path("data/audit_opinions.json")
+    if not path.exists() or not year.isdigit():
+        return None, None
+    book = json.loads(path.read_text(encoding="utf-8"))
+    # 재무보다 감사의견이 한 해 뒤처져 있을 수 있다 — 2023 결산 한 해분만 받아 놔서다.
+    # 없는 해를 "경고 없음" 으로 세지 않고, 있는 가장 최근 해로 내려가되 몇 년도
+    # 것인지를 같이 낸다.
+    for back in range(0, 3):
+        y = int(year) - back
+        rows = rows_for_year(book.get(code) or [], y)
+        if not rows:
+            continue
+        if any(normalize_opinion(r.get("opinion")).is_adverse for r in rows):
+            return "adverse", str(y)
+        if any(has_going_concern(r.get("emphasis")) for r in rows):
+            return "concern", str(y)
+        return "none", str(y)
+    return None, None
 
 
 def retained_worsening(code: str, year: str) -> bool | None:
@@ -575,7 +608,9 @@ def main(argv: list[str] | None = None) -> int:
             f"{len(near)}곳 · 그중 채택 신호에 걸린 곳 {hit}곳")
     extra["_context"] = build_context(code, fin.fiscal_year or "")
     c = build(args.name, code, fin.fiscal_year or "미상", flags, known,
-              worsening=retained_worsening(code, fin.fiscal_year or ""))
+              worsening=retained_worsening(code, fin.fiscal_year or ""),
+              audit=(_a := audit_state(code, fin.fiscal_year or ""))[0],
+              audit_year=_a[1])
     out = Path(args.out or f"data/report_{args.name}.html")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(render(c, extra), encoding="utf-8")
