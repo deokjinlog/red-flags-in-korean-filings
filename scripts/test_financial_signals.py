@@ -56,6 +56,8 @@ SIGNALS_ORDER = ("완전자본잠식", "부분자본잠식", "자본잠식(완�
                  "이익잉여금/자산 하위 25%",
                  # 자금 캘린더 — 예측이 아니라 날짜와 금액의 뺄셈.
                  "2년 내 사채 만기 > 보유 현금", "2년 내 만기 사채에 풋옵션",
+                 # 방향 — 상태가 같아도 어디로 가는지가 다르면 다른 회사다.
+                 "이익잉여금 3년 악화", "영업이익 3년 악화",
                  # D축 — 조달 이력. 점검표가 가장 무겁게 치는데 검정된 적이 없다.
                  "최근 3년 CB·BW 발행", "최근 3년 CB·BW 2회 이상",
                  # C축 — 오너 리스크. 내부자가 팔고 있나, 최대주주가 자주 바뀌나.
@@ -169,6 +171,16 @@ def features(
                            or not assets or assets <= 0
                            else retained / assets <= retained_cut),
 
+        # ── 방향 ────────────────────────────────────────────────────
+        # 상태가 같아도 어디로 가는지가 다르면 다른 회사다. 실측으로 결손금 안에서
+        # 갈린다 — 결손금+악화 408사 10.3% vs 결손금+개선 86사 1.2%, 여덟 배.
+        #
+        # ⚠️ 영업이익 방향은 **안 듣는다**(영업손실+개선 7.8% > 악화 6.3%). 바닥에서
+        #    조금 올라온 것도 개선으로 잡히기 때문이다. 그래서 둘을 따로 낸다 —
+        #    "방향" 을 한 덩어리로 묶으면 안 듣는 쪽이 듣는 쪽을 희석시킨다.
+        "이익잉여금 3년 악화": _worsening(history, "이익잉여금"),
+        "영업이익 3년 악화": _worsening(history, "영업이익"),
+
         # ── 자금 캘린더 ─────────────────────────────────────────────
         # 갚아야 할 돈이 가진 돈보다 많은가. 계수도 임계도 없는 뺄셈이다.
         # 사채가 없는 회사는 0 > 현금 이 거짓이라 자동으로 False 다.
@@ -198,6 +210,27 @@ def features(
         "최대주주 변경 최근 3년": (None if insider is None
                         else bool(insider.get("_owner_recent"))),
     }
+
+
+# 15% 는 우리가 고른 값이다. 회계 변경·일회성으로 몇 %는 늘 흔들려서 그 아래를
+# "그대로" 로 둔다. 임계를 쓰는 신호는 스윕 대상이라는 규율이 여기도 걸린다.
+_DRIFT = 0.15
+
+
+def _worsening(history: list[tuple[dict, dict]] | None,
+               account: str) -> bool | None:
+    """3년 전 대비 그만큼 나빠졌나. 한 해라도 모르면 판정하지 않는다.
+
+    `history` 는 [당해, 전년, 전전년] 순이다. 분모에 절대값을 쓰는 건 이익잉여금이
+    음수인 회사 때문이다 — 음수가 더 음수가 되는 걸 "증가" 로 읽으면 뒤집힌다.
+    """
+    if not history or len(history) < 3:
+        return None
+    now = _get(history[0][0], account)
+    then = _get(history[2][0], account)
+    if now is None or then is None or then == 0:
+        return None
+    return (now - then) / abs(then) < -_DRIFT
 
 
 def accrual_ratio(acc: dict, cf: dict | None) -> float | None:

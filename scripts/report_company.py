@@ -106,6 +106,7 @@ def render(c, extra: dict) -> str:
         f'<div class="sb"><div class="st">{html.escape(t)}</div>'
         f"<p>{rich(d)}</p></div></div>"
         for n, t, d in READING_ORDER)
+    split = (f'<p class="split">{rich(c.drift)}</p>' if c.drift else "")
     moving = drift_line(c, context)
     fired = "".join(card(f, "measured") for f in c.fired) or         '<p class="none">채택된 신호에 걸린 항목이 없습니다.</p>'
     ref = "".join(card(f, "failed") for f in c.reference) or '<p class="none">없음</p>'
@@ -179,6 +180,9 @@ h2{{font-family:var(--serif);font-weight:700;font-size:1.35rem;line-height:1.35;
 .place .line{{font-family:var(--serif);font-weight:700;font-size:1.18rem;line-height:1.55}}
 .place p{{margin:0;color:var(--ink-2);font-size:.95rem}}
 .place .drift{{margin-top:.55rem;padding-top:.55rem;border-top:1px solid var(--rule)}}
+.place .split{{margin-top:.55rem;padding-top:.55rem;border-top:1px solid var(--rule);
+  color:var(--ink)}}
+.place .split b{{color:var(--rate)}}
 .item .what{{margin:.1rem 0 .55rem;color:var(--ink-2);font-size:.93rem;line-height:1.75;
   padding-left:.7rem;border-left:2px solid var(--rule-2)}}
 .item .what b{{color:var(--ink)}}
@@ -259,6 +263,7 @@ footer{{border-top:1px solid var(--rule);padding-top:1.3rem;color:var(--ink-3);
 <section>
   <div class="place">
     <div class="line">{rich(c.summary)}</div>
+    {split}
     {moving}
     <p>0개 걸린 회사는 <b>1.3~1.5%</b>, 5개 이상은 <b>7.6~10.8%</b> 가 이후 2년 안에
        부도·회생·관리절차·영업정지·상장폐지로 갔습니다. 그래도 <b>걸린 것의 열에 아홉은
@@ -401,6 +406,24 @@ def build_context(code: str, year: str) -> dict[str, dict]:
     return out
 
 
+def retained_worsening(code: str, year: str) -> bool | None:
+    """이익잉여금이 3년 전보다 15% 넘게 줄었나. 한 해라도 없으면 **모른다**.
+
+    없는 걸 "악화 아님" 으로 세면 데이터가 모자란 회사가 안전해 보인다. 실측으로
+    같은 개수 걸린 회사도 방향에 따라 7.1% 와 0.0% 로 갈리므로, 이 칸이 비었다는
+    사실 자체를 화면에 내야 한다.
+    """
+    if not year.isdigit():
+        return None
+    book = (json.loads(Path("data/fin_by_year.json").read_text(encoding="utf-8"))
+            if Path("data/fin_by_year.json").exists() else {})
+    now = (book.get(year, {}).get(code) or {}).get("이익잉여금")
+    then = (book.get(str(int(year) - 2), {}).get(code) or {}).get("이익잉여금")
+    if now is None or then is None or float(then) == 0:
+        return None
+    return (float(now) - float(then)) / abs(float(then)) < -0.15
+
+
 def drift_line(c, context: dict[str, dict]) -> str:
     """걸린 항목이 **나빠지는 중인지 나아지는 중인지** 를 한 줄로 센다.
 
@@ -427,9 +450,9 @@ def drift_line(c, context: dict[str, dict]) -> str:
     body = " · ".join(b for b in bits if b)
     scope = (f"걸린 {len(c.fired)}개 중 추세를 잴 수 있는 {known}개"
              if known < len(c.fired) else f"걸린 {known}개 전부")
-    tail = ("최근 3 년 방향은 걸렸다는 사실만큼이나 중요합니다 — "
-            "같은 개수가 걸려도 나아지는 중인 회사와는 다른 이야기입니다.")
-    return f'<p class="drift">{scope}: {body}. {tail}</p>'
+    # 왜 방향이 중요한지는 바로 위 split 이 실측으로 말한다. 여기서 또 말하면
+    # 같은 이야기가 두 번 나와서 둘 다 흘려 읽게 된다. 항목별 내역만 낸다.
+    return f'<p class="drift">{scope}: {body}.</p>'
 
 
 def rank_chokepoints(edges, top: int = 12) -> dict[str, int]:
@@ -551,7 +574,8 @@ def main(argv: list[str] | None = None) -> int:
         extra[f"지분으로 엮인 곳 ({args.hops}홉)"] = (
             f"{len(near)}곳 · 그중 채택 신호에 걸린 곳 {hit}곳")
     extra["_context"] = build_context(code, fin.fiscal_year or "")
-    c = build(args.name, code, fin.fiscal_year or "미상", flags, known)
+    c = build(args.name, code, fin.fiscal_year or "미상", flags, known,
+              worsening=retained_worsening(code, fin.fiscal_year or ""))
     out = Path(args.out or f"data/report_{args.name}.html")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(render(c, extra), encoding="utf-8")

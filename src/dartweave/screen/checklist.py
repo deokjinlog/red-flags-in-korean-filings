@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from dartweave.screen.flags import (
     ADOPTED_KINDS,
     Flag,
+    direction_split,
     flag_count_summary,
     is_adopted,
     verification_of,
@@ -128,15 +129,26 @@ class Checklist:
     clear: list[str] = field(default_factory=list)           # 안 걸린 채택 신호
     unknown: list[str] = field(default_factory=list)         # 판정 못 한 채택 신호
     reference: list[Flag] = field(default_factory=list)      # 검정 미통과 · 참고
+    worsening: bool | None = None    # 이익잉여금 3년 방향. None = 판정 못 함
 
     @property
     def summary(self) -> str:
         known = len(self.fired) + len(self.clear)
         return flag_count_summary(len(self.fired), known)
 
+    @property
+    def drift(self) -> str:
+        """개수만으로 순서를 매기면 틀린다 — 같은 개수 안에서 방향이 더 크게 가른다.
+
+        `summary` 와 반드시 같이 나가야 한다. 실측으로 3개 걸림 + 악화(8.1%)가
+        5개 걸림 + 악화 아님(5.9%)보다 높다.
+        """
+        return direction_split(len(self.fired), self.worsening)
+
 
 def build(name: str, corp_code: str, fiscal_year: str, flags: list[Flag],
-          known: dict[str, bool | None]) -> Checklist:
+          known: dict[str, bool | None],
+          worsening: bool | None = None) -> Checklist:
     """`screen()` 결과를 네 덩어리로 가른다.
 
     `known` 은 채택 신호별 판정 결과다(True/False/None). **걸린 것만으로는 부족하다** —
@@ -154,6 +166,7 @@ def build(name: str, corp_code: str, fiscal_year: str, flags: list[Flag],
         unknown=[k for k in ADOPTED_KINDS
                  if k not in fired_kinds and known.get(k) is None],
         reference=[f for f in flags if not is_adopted(f.kind)],
+        worsening=worsening,
     )
 
 

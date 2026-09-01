@@ -4,6 +4,8 @@
 소음이 되고, 소음은 실무에서 무시된다. 그래서 `Flag` 는 `evidence` 없이 생성 자체가
 안 되게 막아뒀고, 아래 테스트가 그걸 고정한다.
 """
+from pathlib import Path
+
 import pytest
 
 from dartweave.screen.flags import (
@@ -352,7 +354,7 @@ def test_no_member_list_means_no_judgement():
 
 def test_adopted_financial_signals_say_so():
     """검정을 통과한 둘 — 검정 상태에 '채택' 이 박혀 있어야 한다."""
-    for kind, ratio in (("결손금", "×6.78"), ("영업손실", "×2.44"), ("당기순손실", "×3.41")):
+    for kind, ratio in (("결손금", "×9.47"), ("영업손실", "×8.30"), ("당기순손실", "×11.71")):
         v = verification_of(kind)
         assert "채택" in v and "미검정" not in v and ratio in v
     # 약한 쪽도 is_adopted 로는 채택이어야 한다 — 검색이 이걸로 순서를 가른다.
@@ -410,18 +412,21 @@ def test_is_adopted_does_not_leak_withdrawn_checks():
 
 
 def test_signal_strengths_are_graded_not_lumped():
-    """여섯 신호의 근거 강도가 다르다 — 같은 문구로 팔면 안 된다."""
-    strong = verification_of("결손금")
-    assert "네 시점 전부 Bonferroni 통과" in strong and "유일하다" in strong
-    for kind in ("당기순손실", "영업손실", "이자보상배율 1 미만"):
-        assert "Bonferroni 는 4개 중 3개" in verification_of(kind), kind
-    weak = verification_of("영업현금흐름 음수")
-    assert "채택(약)" in weak and "4개 중 2개" in weak
+    """신호마다 근거 강도가 다르다 — 같은 문구로 팔면 안 된다."""
+    assert "Bonferroni 통과" in verification_of("결손금")
+    # 방향은 둘로 갈린다. 이익잉여금은 채택, 영업이익은 반려 — 묶으면 안 되는 이유가
+    # 검정 상태에 적혀 있어야 한다.
+    up = verification_of("이익잉여금 3년 악화")
+    down = verification_of("영업이익 3년 악화")
+    assert "채택" in up and "가장 크게 가른다" in up
+    assert down.lstrip().startswith("**채택 안 함") and "개선 쪽이 오히려 높다" in down
 
 
-def test_family_growth_is_recorded_not_hidden():
-    """신호를 더 검정하면 가족이 커져 임계가 조여진다 — 그 대가를 적어둔다."""
-    assert "가족이 26→35" in verification_of("당기순손실")
+def test_base_labels_change_is_recorded_not_hidden():
+    """답안지에서 영업정지를 뺀 사실이 표에 남아 있어야 한다 — 숫자가 다 바뀌었다."""
+    from dartweave.screen import flags
+    src = Path(flags.__file__).read_text(encoding="utf-8")
+    assert "영업정지를 뺀 뒤" in src and "810→526" in src
 
 
 def test_weak_adoption_still_counts_as_adopted():
@@ -503,8 +508,21 @@ def test_flag_count_bands_are_measured_not_invented():
     assert len(ADOPTED_KINDS) == 5
     zero = flag_count_summary(0, 5)
     many = flag_count_summary(6, 5)
-    assert "0개" in zero and "1.3~1.5%" in zero
-    assert "5개 이상" in many and "7.6~10.8%" in many
+    assert "0개" in zero and "0.00~0.20%" in zero
+    assert "5개 이상" in many and "5.54~10.18%" in many
+
+
+def test_direction_outranks_count_in_the_middle_bands():
+    """개수만으로 순서를 매기면 틀린다 — 3개+악화(8.1%)가 5개+악화아님(5.9%)보다 높다."""
+    from dartweave.screen.flags import direction_split
+
+    assert "8.1%" in direction_split(3, True)
+    assert "0.0%" in direction_split(4, False)
+    # 3년치가 없으면 '악화 아님' 이 아니라 '모른다' 다.
+    unknown = direction_split(4, None)
+    assert "판정하지 못했습니다" in unknown and "덜 아는 것" in unknown
+    # 표본이 얇은 구간은 없는 정밀도를 만들지 않는다.
+    assert direction_split(1, True) == ""
 
 
 def test_flag_count_says_when_it_could_not_judge():
