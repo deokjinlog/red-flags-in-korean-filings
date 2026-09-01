@@ -40,6 +40,8 @@ from dartweave.screen.audit import (
     rows_for_year,
 )
 from dartweave.screen.distribution import position, trend
+from dartweave.screen.listing import boxes as listing_boxes
+from dartweave.screen.listing import sales_note, summary as listing_summary
 from dartweave.screen.sector import MIN_PEERS, is_shell, name_of, sector_of
 from dartweave.dart.live import neighbours
 from dartweave.parse.notes import worth_reading
@@ -111,6 +113,7 @@ def render(c, extra: dict) -> str:
         f'<div class="sb"><div class="st">{html.escape(t)}</div>'
         f"<p>{rich(d)}</p></div></div>"
         for n, t, d in READING_ORDER)
+    boxes_html = listing_section(c.corp_code, c.fiscal_year)
     split = (f'<p class="split">{rich(c.drift)}</p>' if c.drift else "")
     audited = (f'<p class="split">{rich(c.auditor)}</p>' if c.auditor else "")
     moving = drift_line(c, context)
@@ -199,6 +202,15 @@ h2{{font-family:var(--serif);font-weight:700;font-size:1.35rem;line-height:1.35;
 .st{{font-weight:600;font-size:.97rem;margin-bottom:.2rem}}
 .step p{{margin:0;color:var(--ink-2);font-size:.93rem;line-height:1.7}}
 .step b{{color:var(--ink)}}
+.boxes .line{{font-family:var(--serif);font-weight:700;font-size:1.08rem;
+  line-height:1.55;background:var(--sheet);border:1px solid var(--rule-2);
+  border-radius:2px;padding:1rem 1.15rem}}
+.boxes ul{{margin:0;padding-left:1.1rem;color:var(--ink-2);font-size:.93rem;
+  display:flex;flex-direction:column;gap:.3rem}}
+.boxes b{{color:var(--ink)}}
+.boxes .note{{margin:0;color:var(--ink-2);font-size:.9rem;line-height:1.75;
+  background:var(--sunk);border:1px solid var(--rule);border-radius:2px;
+  padding:.85rem 1rem}}
 .scope p{{margin:0;color:var(--ink-2);font-size:.95rem;line-height:1.75;
   background:var(--sunk);border:1px solid var(--rule);border-radius:2px;padding:.9rem 1rem}}
 .scope b{{color:var(--ink)}}
@@ -279,6 +291,8 @@ footer{{border-top:1px solid var(--rule);padding-top:1.3rem;color:var(--ink-3);
   </div>
   <div class="tablewrap"><table><tbody>{facts}</tbody></table></div>
 </section>
+
+{boxes_html}
 
 <section class="howto">
   <div class="head"><h2>이 리포트 읽는 법</h2>
@@ -411,6 +425,33 @@ def build_context(code: str, year: str) -> dict[str, dict]:
             t = trend(book, code, account, years, higher_is_worse=worse_high)
             out[kind]["trend"] = f"{t.arrow()} · 억원 {t.as_row()}"
     return out
+
+
+def listing_section(code: str, year: str) -> str:
+    """관리종목 요건까지 몇 칸. **판정선을 우리가 안 정한 유일한 층**이다."""
+    book = _read_json("data/fin_by_year.json")
+    if not year.isdigit() or not book.get(year, {}).get(code):
+        return ""
+    g = lambda y, k: (float(book[y][code][k])                       # noqa: E731
+                      if book.get(y, {}).get(code, {}).get(k) is not None else None)
+    ops = [g(str(int(year) - k), "영업이익") for k in range(4)]
+    found = listing_boxes(g(year, "자본총계"), g(year, "자본금"),
+                          g(year, "매출액"), ops)
+    ind = _read_json("data/industry.json")
+    note = sales_note(g(year, "매출액"), sector_of(ind.get(code)))
+    items = "".join(f"<li>{rich(b.sentence())}</li>" for b in found)
+    tail = f'<p class="note">{rich(note)}</p>' if note else ""
+    return (f'<section class="boxes"><div class="head"><h2>관리종목 요건까지 몇 칸</h2>'
+            f'<p class="sub">여기만 판정선을 우리가 정하지 않았습니다 — 코스닥·코스피 '
+            f'상장규정에 숫자가 그대로 박혀 있고, 걸리면 관리종목이 됩니다. '
+            f'다만 요건에 걸리는 회사가 41~207사뿐이라 <b>검정이 아니라 관측</b>입니다.'
+            f'</p></div><div class="line">{rich(listing_summary(found))}</div>'
+            f"<ul>{items}</ul>{tail}</section>")
+
+
+def _read_json(path: str) -> dict:
+    p = Path(path)
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
 
 
 def audit_state(code: str, year: str) -> tuple[str | None, str | None]:
