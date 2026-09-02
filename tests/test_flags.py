@@ -556,11 +556,21 @@ def test_missing_audit_is_not_absence_of_warning():
 
 
 def test_audit_year_is_stamped_because_it_lags_the_financials():
-    """감사의견은 2023 한 해분뿐이라 재무(2024)와 다른 해다 — 안 밝히면 같은 해로 읽힌다."""
+    """감사의견 연도가 재무와 다를 수 있다 — 안 밝히면 같은 해로 읽힌다."""
     from dartweave.screen.flags import audit_split
 
     assert "2023 사업연도" in audit_split(3, "concern", "2023")
-    assert "기준시점 1개" in audit_split(3, "concern", "2023")
+
+
+def test_audit_says_only_one_base_date_produced_a_verdict():
+    """가장 강한 값(x12.28)이지만 두 시점 중 하나만 판정났다 — 둘 다 말해야 한다."""
+    from dartweave.screen import flags
+
+    warned = flags.audit_split(5, "concern", "2023")
+    assert "×12.28" in warned and "한 시점만 판정" in warned
+    src = Path(flags.__file__).read_text(encoding="utf-8")
+    # 왜 채택 신호로 안 올렸는지가 코드에 남아 있어야 한다.
+    assert "신호군 부실 8건" in src and "기준을 느슨하게" in src
 
 
 def test_korean_particle_agrees_with_the_final_jamo():

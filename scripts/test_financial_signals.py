@@ -34,6 +34,12 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from dartweave.screen.audit import (
+    has_going_concern,
+    normalize_opinion,
+    rows_for_year,
+)
+
 from dartweave.db.asof import CensoredWindowError, events_after
 from dartweave.screen.calendar import Due, due_within
 from dartweave.signal.labels import is_distress
@@ -58,6 +64,9 @@ SIGNALS_ORDER = ("완전자본잠식", "부분자본잠식", "자본잠식(완�
                  "2년 내 사채 만기 > 보유 현금", "2년 내 만기 사채에 풋옵션",
                  # 방향 — 상태가 같아도 어디로 가는지가 다르면 다른 회사다.
                  "이익잉여금 3년 악화", "영업이익 3년 악화",
+                 # 감사 — 표에 안 나오고 문장으로만 있는 칸.
+                 "감사 계속기업 경고", "감사 의견거절·한정",
+                 "감사 경고 (거절·한정·계속기업)",
                  # D축 — 조달 이력. 점검표가 가장 무겁게 치는데 검정된 적이 없다.
                  "최근 3년 CB·BW 발행", "최근 3년 CB·BW 2회 이상",
                  # C축 — 오너 리스크. 내부자가 팔고 있나, 최대주주가 자주 바뀌나.
@@ -93,6 +102,7 @@ def features(
     due: Due | None = None,
     bond_count: int | None = None,
     insider: dict | None = None,
+    audit: str | None = None,
 ) -> dict[str, bool | None]:
     """재무 신호 후보. 값이 없으면 None — 모르는 걸 '아니다' 로 세지 않는다."""
     equity, capital = _get(acc, "자본총계"), _get(acc, "자본금")
@@ -209,6 +219,19 @@ def features(
         # 10년 전 변경 이력까지 딸려 온다.
         "최대주주 변경 최근 3년": (None if insider is None
                         else bool(insider.get("_owner_recent"))),
+
+        # ── 감사 ────────────────────────────────────────────────────
+        # 부실 상장폐지 154건 중 83건(54%)이 감사의견이다. 그런데 그 경고는 표가
+        # 아니라 강조사항 칸의 문장이라 대개 안 읽힌다.
+        #
+        # `audit` 은 'adverse'(의견거절·한정) / 'concern'(계속기업 경고) /
+        # 'none'(경고 없음) / None(감사보고서를 못 받음). **None 을 False 로 세면
+        # 안 된다** — 못 받은 것과 경고가 없는 것은 다르다. 2023년 기준 상장사
+        # 2,581사만 감사의견을 갖고 있다.
+        "감사 계속기업 경고": (None if audit is None else audit == "concern"),
+        "감사 의견거절·한정": (None if audit is None else audit == "adverse"),
+        "감사 경고 (거절·한정·계속기업)": (None if audit is None
+                              else audit in ("adverse", "concern")),
     }
 
 
@@ -348,6 +371,7 @@ def build_features(
     bonds_path: str = "data/bond_filings.json",
     terms_path: str = "data/bond_terms.json",
     insider_path: str = "data/insider.json",
+    audit_path: str = "data/audit_opinions.json",
 ) -> tuple[dict[str, dict], dict[str, float]]:
     """기준시점 하나의 (회사 → 신호 여부, 회사 → 자산총계).
 
@@ -360,6 +384,7 @@ def build_features(
     fin, cash, bonds = read(fin_path), read(cash_path), read(bonds_path)
     terms = read(terms_path)
     insider = read(insider_path)
+    audit_book = read(audit_path)
     year = str(int(as_of[:4]) - 1)
     acc_now, acc_prev = fin.get(year, {}), fin.get(str(int(year) - 1), {})
     cash_now, cash_prev = cash.get(year, {}), cash.get(str(int(year) - 1), {})
@@ -392,6 +417,22 @@ def build_features(
             by_corp[code].append(row)
     due_of = {c: due_within(rows, base, years=2) for c, rows in by_corp.items()}
 
+    # 감사의견은 재무와 같은 사업연도를 쓴다 — as_of 20240630 이면 2023 사업보고서다
+    # (2024-03 제출). 한 요청에 당기·전기·전전기가 함께 오므로 2021~2023 이 이미 있다.
+    audit_of: dict[str, str] = {}
+    for code, rows in audit_book.items():
+        got = rows_for_year(rows or [], int(year))
+        if not got:
+            continue
+        # 나쁜 쪽부터 본다. 의견거절 본문에도 계속기업 이야기가 들어 있어서,
+        # 경고를 먼저 보면 의견거절이 계속기업 경고로 내려앉는다.
+        if any(normalize_opinion(r.get("opinion")).is_adverse for r in got):
+            audit_of[code] = "adverse"
+        elif any(has_going_concern(r.get("emphasis")) for r in got):
+            audit_of[code] = "concern"
+        else:
+            audit_of[code] = "none"
+
     years3 = [year, str(int(year) - 1), str(int(year) - 2)]
     hist = lambda c: [(fin.get(y, {}).get(c) or {}, cash.get(y, {}).get(c) or {})
                       for y in years3]
@@ -409,7 +450,8 @@ def build_features(
     feats = {c: features(acc_now[c], acc_prev.get(c, {}), cash_now.get(c, {}),
                          cash_prev.get(c, {}), hist(c), cut, r_cut,
                          due_of.get(c, Due(0.0, 0, 0)) if terms else None,
-                         counts.get(c, 0) if bonds else None, owner_of(c))
+                         counts.get(c, 0) if bonds else None, owner_of(c),
+                         audit_of.get(c))
              for c in pool}
     return feats, {c: float(acc_now[c]["자산총계"]) for c in pool}
 

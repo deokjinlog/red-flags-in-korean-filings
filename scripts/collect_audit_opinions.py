@@ -68,7 +68,11 @@ def main(argv: list[str] | None = None) -> int:
                         # stlm_dt 는 세 기수에 전부 같은 값이 붙는다 — 연도로 못 쓴다.
                         "year": term_year(term, int(args.year)),
                         "opinion": str(it.get("adt_opinion", "")).strip(),
-                        "emphasis": str(it.get("emphs_matter", ""))[:200],
+                        # 자르지 않는다. 200자로 자르면 "계속기업" 이 뒤쪽에 있는 건 통째로
+                        # 놓치고, 몇 건을 놓쳤는지 알 수조차 없다. 실측으로 강조사항이
+                        # 200자를 넘는 게 59건이고 그중 앞 200자 안에 "계속기업" 이
+                        # 있는 건 15건뿐이었다.
+                        "emphasis": str(it.get("emphs_matter", "")),
                         "stlm_dt": str(it.get("stlm_dt", "")),
                     })
             done[code] = rows
