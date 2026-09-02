@@ -1,4 +1,4 @@
-"""종목 하나의 "사지 말 이유" 체크리스트를 HTML 로 낸다.
+"""종목 하나를 놓고 "여전히 들고 있어도 되나" 를 HTML 로 낸다.
 
 무엇을 내나:
   판정이 아니라 **위치**다 — 채택된 신호 몇 개에 걸렸고, 그 구간의 실측 부실률이
@@ -137,7 +137,7 @@ def render(c, extra: dict) -> str:
                     f"<td class='num'>{html.escape(v)}</td></tr>"
                     for k, v in extra.items())
 
-    return f"""<title>{html.escape(c.name)} 공시 점검표</title>
+    return f"""<title>{html.escape(c.name)} — 여전히 들고 있어도 되나</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@600;700&display=swap">
 <style>
 :root{{
@@ -272,9 +272,12 @@ footer{{border-top:1px solid var(--rule);padding-top:1.3rem;color:var(--ink-3);
 <div class="wrap">
 <header>
   <div class="stamp">DART 자동 점검 · {html.escape(c.corp_code)} · {html.escape(c.fiscal_year)} 사업연도</div>
-  <h1>{html.escape(c.name)}<br>사지 말 이유 점검표</h1>
-  <p class="lede">판정하지 않습니다. <b>어느 구간에 있는지</b>와 그 구간의 실측 부실률만
-     냅니다. 항목마다 붙은 숫자는 교과서 기준선이 아니라 상장사 2,255사 × 기준시점 4개에서
+  <h1>{html.escape(c.name)}<br>여전히 들고 있어도 되나</h1>
+  <p class="lede"><b>오를지는 보지 않습니다.</b> 이 점검표가 답하는 건 하나입니다 —
+     <b>이 회사가 2년 안에 사라지거나 팔 기회를 잃을 위험이 어느 구간인가.</b>
+     가격·성장성·수익성은 다루지 않으니 <b>고르는 도구가 아니라 지우는 도구</b>입니다.</p>
+  <p class="lede">판정도 하지 않습니다. 어느 구간인지와 그 구간의 실측 부실률만 냅니다.
+     항목마다 붙은 숫자는 교과서 기준선이 아니라 상장사 2,270사 × 기준시점 2개에서
      직접 잰 값입니다.</p>
 </header>
 
@@ -284,15 +287,14 @@ footer{{border-top:1px solid var(--rule);padding-top:1.3rem;color:var(--ink-3);
     {split}
     {audited}
     {moving}
-    <p>0개 걸린 회사는 <b>1.3~1.5%</b>, 5개 이상은 <b>7.6~10.8%</b> 가 이후 2년 안에
-       부도·회생·관리절차·영업정지·상장폐지로 갔습니다. 그래도 <b>걸린 것의 열에 아홉은
+    <p>0개 걸린 회사는 <b>0.00~0.20%</b>, 5개 이상은 <b>5.54~10.18%</b> 가 이후 2년 안에
+       부도·회생·관리절차·상장폐지로 갔습니다. 그래도 <b>걸린 것의 열에 아홉은
        아무 일도 없었습니다</b> — 이건 "위험" 이 아니라 "여기서 멈추고 이유를 찾아보라"
-       는 신호입니다.</p>
+       는 신호입니다.<br><b>영업정지는 세지 않습니다</b> — 답안지에 하나은행·신한은행 같은
+       금융당국 제재가 부실로 들어가 있어서 뺐습니다.</p>
   </div>
   <div class="tablewrap"><table><tbody>{facts}</tbody></table></div>
 </section>
-
-{boxes_html}
 
 <section class="howto">
   <div class="head"><h2>이 리포트 읽는 법</h2>
@@ -303,17 +305,19 @@ footer{{border-top:1px solid var(--rule);padding-top:1.3rem;color:var(--ink-3);
 
 <section class="scope">
   <div class="head"><h2>이 점검표가 답하지 않는 것</h2></div>
-  <p>여기서 나온 숫자는 <b>사지 말 이유가 있는지</b>에만 답합니다. 살 이유는 다루지
+  <p>여기서 나온 숫자는 <b>계속 들고 있어도 되는지</b>에만 답합니다. 살 이유는 다루지
      않습니다 — 주가·PER·목표주가 같은 <b>가격 판단은 아예 넣지 않았고</b>, 수주 잔고,
      신제품, 업황 사이클, 경영진 역량처럼 공시 숫자표 밖에 있는 것도 보지 않습니다.
      그래서 <b>0개 걸림이 매수 신호가 아니고</b>, 5개 걸림도 그 자체로는 매도 신호가
      아닙니다. 걸린 항목은 <b>멈춰서 원문을 열어 볼 자리</b>를 가리킬 뿐입니다.</p>
 </section>
 
+{boxes_html}
+
 <section>
   <div class="head">
     <h2>걸린 항목</h2>
-    <p class="sub">기준시점 4개 × 규모·업종 통제 7설정 = 28조합 전부에서 유의했던
+    <p class="sub">기준시점 2개 × 규모·업종 통제 7설정 = 14조합 전부에서 유의했던
        신호만 셉니다.</p>
   </div>
   {fired}
@@ -595,9 +599,9 @@ def main(argv: list[str] | None = None) -> int:
             kind="최근 3년 CB·BW 2회 이상" if bond_count >= 2 else "최근 3년 CB·BW 발행",
             summary=f"최근 3년({min(window)}~{max(window)}) 전환사채·신주인수권부사채 "
                     f"**{bond_count}회** 발행",
-            evidence=["2회 이상인 기업의 이후 2년 부실률 실측 7.5~10.3% "
-                      "(규모·업종 통제 후 ×2.5~6.7 · 기준시점 4개)",
-                      "└ **채택** · 검정한 24종 중 가장 강한 신호다"]))
+            evidence=["2회 이상인 기업의 이후 2년 부실률 실측 5.3~7.7% "
+                      "(전체 1.5~2.4% · 규모·업종 통제 후 ×5.6~8.8 · 기준시점 2개)",
+                      "└ **채택** · 두 기준시점 × 통제 7설정 = 14조합 전부에서 유의"]))
 
     money = lambda v: "미상" if v is None else f"{v / 1e8:,.0f}억"  # noqa: E731
     extra = {

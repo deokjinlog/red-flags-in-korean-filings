@@ -381,7 +381,7 @@ def test_deficit_summary_carries_the_measured_rate():
 
     f = accumulated_deficit(-1_000_000_000_000, year="2022")
     assert f and "2022년" in f.summary and "10,000억" in f.summary
-    assert any("6.7~9.6%" in e for e in f.evidence)
+    assert any("4.2~7.4%" in e for e in f.evidence)
 
 
 def test_operating_loss_fires_only_on_negative_operating_income():
@@ -457,7 +457,7 @@ def test_net_loss_is_the_widest_of_the_three():
     assert net_loss(-30_000_000_000, year="2022") is not None
     assert net_loss(30_000_000_000) is None
     assert net_loss(None) is None
-    assert "30~38%가 여기 걸리고" in " ".join(net_loss(-1).evidence)
+    assert "33~37%가 여기 걸리고" in " ".join(net_loss(-1).evidence)
 
 
 def test_net_loss_records_that_an_earlier_verdict_was_wrong():
