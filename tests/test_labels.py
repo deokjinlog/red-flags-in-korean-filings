@@ -34,7 +34,7 @@ def test_unknown_type_is_not_distress():
 
 def test_no_type_is_both_counted_and_excluded():
     assert "해산(부실아님)" not in DISTRESS_TYPES
-    assert len(DISTRESS_TYPES) == 8
+    assert len(DISTRESS_TYPES) == 9
 
 
 def test_business_suspension_is_excluded():
@@ -49,3 +49,32 @@ def test_business_suspension_is_excluded():
     # 진짜 부실은 그대로 센다
     for t in ("부도", "회생", "관리절차", "파산", "상장폐지(감사의견)"):
         assert is_distress(t), t
+
+
+def test_final_default_delisting_counts_as_distress():
+    """최종부도로 인한 폐지가 '기타' 로 떨어져 부실에서 빠져 있었다."""
+    from dartweave.signal.labels import is_distress
+
+    assert is_distress("상장폐지(부도)")
+    # 예정된 종료는 여전히 부실이 아니다.
+    assert not is_distress("상장폐지(존속기간 만료)")
+
+
+def test_delisting_classifier_leaves_no_other_bucket():
+    """'기타' 가 남아 있으면 그 안에 부실이 섞여 있는지 아무도 모른다."""
+    import json
+    from pathlib import Path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from collect_delisting import classify
+
+    # 실제로 '기타' 로 떨어져 있던 두 종류
+    assert classify("발행한 어음 또는 수표가 주거래은행에 의하여 최종부도로 결정되거나 "
+                    "거래은행에 의한 거래정지") == "상장폐지(부도)"
+    assert classify("존속기간 만료") == "상장폐지(존속기간 만료)"
+
+    src = Path("data/delisting.json")
+    if src.exists():
+        rows = json.loads(src.read_text(encoding="utf-8"))
+        assert not [r for r in rows if classify(r["reason"]) == "상장폐지(기타)"]

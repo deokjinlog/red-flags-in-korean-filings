@@ -37,13 +37,24 @@ def main(argv: list[str] | None = None) -> int:
     engine = create_engine(args.db)
     Base.metadata.create_all(engine)
 
-    inserted = skipped = 0
+    inserted = skipped = updated = 0
     with Session(engine) as s:
-        have = set(s.scalars(select(DistressEvent.rcept_no)))
+        # 키뿐 아니라 현재 event_type 도 읽는다. 사유 분류를 고치면 이미 들어간 행도
+        # 따라가야 한다 — 안 그러면 분류기를 고쳐도 답안지가 안 바뀐다. 실제로
+        # 최종부도 4건이 "기타" 로 들어가 있었고 재적재해도 그대로였다.
+        current = {k: t for k, t in s.execute(
+            select(DistressEvent.rcept_no, DistressEvent.event_type))}
+        have = set(current)
         for r in usable:
             key = f"DELIST{r['date']}{r['corp_code']}"
             if key in have:
-                skipped += 1
+                if current[key] != r["kind"]:
+                    updated += 1
+                    if args.load:
+                        row = s.get(DistressEvent, key)
+                        row.event_type = r["kind"]
+                else:
+                    skipped += 1
                 continue
             if args.load:
                 s.add(DistressEvent(rcept_no=key, corp_code=r["corp_code"],
@@ -57,7 +68,8 @@ def main(argv: list[str] | None = None) -> int:
     kinds = Counter(r["kind"] for r in usable)
     print(f"\n대상 {len(rows):,}건 · corp_code 확보 {len(usable):,}건 "
           f"(미해소 {len(rows) - len(usable):,}건은 넣지 않음)")
-    print(f"{'적재' if args.load else '적재 예정'} {inserted:,}건 · 이미 있음 {skipped:,}건")
+    print(f"{'적재' if args.load else '적재 예정'} {inserted:,}건 · 이미 있음 {skipped:,}건"
+          f" · 분류 갱신 {updated:,}건")
     print(f"  그중 부실로 세는 것 "
           f"{sum(n for k, n in kinds.items() if is_distress(k)):,}건")
     if not args.load:

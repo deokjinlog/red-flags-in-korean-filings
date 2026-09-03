@@ -82,6 +82,8 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--year", default="2023")
     p.add_argument("--limit", type=int, default=4000)
+    p.add_argument("--min-interval", type=float, default=0.2,
+                   help="요청 간격(초). 0 으로 두면 DART 가 연결을 끊는다 — 실측으로 겪었다.")
     p.add_argument("--universe", default="data/universe_tested.json",
                    help="검정 대상만 — 전체 상장 이력에는 폐지사가 절반 가까이 섞여 있다")
     args = p.parse_args(argv)
@@ -119,12 +121,25 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{args.year}년은 이어받을 게 없습니다 — {len(have):,}/{len(codes):,}")
         return 0
 
-    client = DartClient(api_key=s.dart_api_key)
+    client = DartClient(api_key=s.dart_api_key, min_interval=args.min_interval)
+    failed = 0
     try:
         for i, code in enumerate(todo, 1):
-            r = client.get_json("fnlttSinglAcnt.json",
-                                {"corp_code": code, "bsns_year": args.year,
-                                 "reprt_code": "11011"})
+            try:
+                r = client.get_json("fnlttSinglAcnt.json",
+                                    {"corp_code": code, "bsns_year": args.year,
+                                     "reprt_code": "11011"})
+            except Exception as e:
+                # 네트워크 오류는 **저장하지 않는다**. 빈 값을 넣으면 재개가 그걸
+                # "받았다" 로 읽어서 영영 다시 안 받는다. 대신 연달아 끊기면 멈춘다 —
+                # 계속 두드리면 IP 가 막힌다(한 번 겪었다).
+                failed += 1
+                print(f"  ! {code} {type(e).__name__}", flush=True)
+                if failed >= 10:
+                    print("  연속 실패가 잦아 중단합니다. 잠시 뒤 다시 실행하세요.", flush=True)
+                    break
+                continue
+            failed = 0
             terms = (pick_accounts(r.get("list") or [], int(args.year))
                      if classify(str(r.get("status", ""))) is Action.OK else {})
             done[code] = terms.get(args.year, {}).get("자산총계")

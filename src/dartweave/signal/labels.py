@@ -48,6 +48,9 @@ DELISTING_DISTRESS = frozenset({
     "상장폐지(실질심사)",
     "상장폐지(파산)",
     "상장폐지(보고서 미제출)",
+    # 최종부도로 인한 폐지. 분류 규칙이 없어 "기타" 로 떨어져 있던 걸 되찾았다 —
+    # 사유 문구가 "발행한 어음 또는 수표가 ... 최종부도로 결정" 이다.
+    "상장폐지(부도)",
 })
 
 DISTRESS_TYPES = DART_DISTRESS | DELISTING_DISTRESS
