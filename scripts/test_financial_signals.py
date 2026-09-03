@@ -67,6 +67,8 @@ SIGNALS_ORDER = ("완전자본잠식", "부분자본잠식", "자본잠식(완�
                  # 감사 — 표에 안 나오고 문장으로만 있는 칸.
                  "감사 계속기업 경고", "감사 의견거절·한정",
                  "감사 경고 (거절·한정·계속기업)",
+                 # E축 — 공시 행태. 재무를 안 보고도 되는 유일한 축이다.
+                 "최근 3년 불성실공시", "최근 3년 불성실공시 2회 이상",
                  # D축 — 조달 이력. 점검표가 가장 무겁게 치는데 검정된 적이 없다.
                  "최근 3년 CB·BW 발행", "최근 3년 CB·BW 2회 이상",
                  # C축 — 오너 리스크. 내부자가 팔고 있나, 최대주주가 자주 바뀌나.
@@ -103,6 +105,7 @@ def features(
     bond_count: int | None = None,
     insider: dict | None = None,
     audit: str | None = None,
+    bad_disclosure: int | None = None,
 ) -> dict[str, bool | None]:
     """재무 신호 후보. 값이 없으면 None — 모르는 걸 '아니다' 로 세지 않는다."""
     equity, capital = _get(acc, "자본총계"), _get(acc, "자본금")
@@ -232,6 +235,19 @@ def features(
         "감사 의견거절·한정": (None if audit is None else audit == "adverse"),
         "감사 경고 (거절·한정·계속기업)": (None if audit is None
                               else audit in ("adverse", "concern")),
+
+        # ── E축 · 공시 행태 ──────────────────────────────────────────
+        # 재무제표가 아니라 **회사가 공시를 어떻게 다루는가**를 본다. 로드맵에 있었지만
+        # 한 번도 못 쟀던 축이고, DART OpenAPI 에는 없다(거래소 소관).
+        #
+        # 여기서 None 이 없는 게 중요하다. 불성실공시 지정은 전수 명단이라 명단에
+        # 없으면 **지정된 적 없다**는 뜻이다 — 감사의견처럼 "못 받았다" 가 아니다.
+        # (다만 corp_code 를 못 붙인 5% 는 조용히 False 가 된다. 신호를 약하게
+        #  만드는 방향이라 과장은 아니다.)
+        "최근 3년 불성실공시": (None if bad_disclosure is None
+                        else bad_disclosure >= 1),
+        "최근 3년 불성실공시 2회 이상": (None if bad_disclosure is None
+                              else bad_disclosure >= 2),
     }
 
 
@@ -372,6 +388,7 @@ def build_features(
     terms_path: str = "data/bond_terms.json",
     insider_path: str = "data/insider.json",
     audit_path: str = "data/audit_opinions.json",
+    bad_path: str = "data/kind_bad_disclosure.csv",
 ) -> tuple[dict[str, dict], dict[str, float]]:
     """기준시점 하나의 (회사 → 신호 여부, 회사 → 자산총계).
 
@@ -433,6 +450,25 @@ def build_features(
         else:
             audit_of[code] = "none"
 
+    # 불성실공시 — 기준일 **이전** 3년만 센다. 지정일이 그대로 시점 게이트다.
+    # 명단이 없으면 전부 None 으로 둔다(파일이 없는 것과 지정이 없는 것은 다르다).
+    bad_of: dict[str, int] | None = None
+    bad_file = Path(bad_path)
+    if bad_file.exists():
+        import csv as _csv
+
+        cc_map = read("data/corpcode.json")
+        window_from = str(int(as_of[:4]) - 3) + as_of[4:]
+        counts_bad: dict[str, int] = defaultdict(int)
+        with bad_file.open(encoding="utf-8") as fh:
+            for row in _csv.DictReader(fh):
+                if row["is_signal"] != "1":
+                    continue
+                code = cc_map.get(row["corp_name"])
+                if code and window_from < row["date"] <= as_of:
+                    counts_bad[code] += 1
+        bad_of = dict(counts_bad)
+
     years3 = [year, str(int(year) - 1), str(int(year) - 2)]
     hist = lambda c: [(fin.get(y, {}).get(c) or {}, cash.get(y, {}).get(c) or {})
                       for y in years3]
@@ -451,7 +487,8 @@ def build_features(
                          cash_prev.get(c, {}), hist(c), cut, r_cut,
                          due_of.get(c, Due(0.0, 0, 0)) if terms else None,
                          counts.get(c, 0) if bonds else None, owner_of(c),
-                         audit_of.get(c))
+                         audit_of.get(c),
+                         (bad_of.get(c, 0) if bad_of is not None else None))
              for c in pool}
     return feats, {c: float(acc_now[c]["자산총계"]) for c in pool}
 

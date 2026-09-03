@@ -114,12 +114,13 @@ def reason_of(title: str) -> tuple[str, bool | None]:
     return "기타사유", None
 
 
-def fetch(frm: str, to: str, page: int, size: int = 100) -> str:
+def fetch(frm: str, to: str, page: int, size: int = 100,
+          report_nm: str = "관리종목") -> str:
     params = {
         "method": "searchDetailsSub", "forward": "details_sub",
         "currentPageSize": str(size), "pageIndex": str(page),
         "orderMode": "1", "orderStat": "D",
-        "reportNm": "관리종목", "fromDate": frm, "toDate": to,
+        "reportNm": report_nm, "fromDate": frm, "toDate": to,
         **{k: "" for k in REQUIRED_EMPTY},
     }
     req = urllib.request.Request(

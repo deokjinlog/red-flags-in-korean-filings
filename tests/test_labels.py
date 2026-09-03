@@ -122,3 +122,21 @@ def test_admin_designation_classifier_splits_size_from_distress():
     assert event_of("주권매매거래정지(관리종목지정사유발생)") == "거래정지"
     assert event_of("신주인수권증권 상장폐지(기초주권의 관리종목 지정)") == "파생상품"
     assert event_of("관리종목지정(상장폐지사유 발생)") == "지정"
+
+
+def test_bad_disclosure_does_not_count_the_cleared():
+    """'불성실공시법인미지정' 은 심의 끝에 지정 안 한 것이다 — 세면 무혐의를 유죄로 센다."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from collect_kind_bad_disclosure import reason_of, status_of
+
+    assert status_of("불성실공시법인지정(공시번복)") == ("지정", True)
+    # 아래 셋은 문자열에 '지정' 이 들어 있지만 신호가 아니다.
+    assert status_of("불성실공시법인미지정(지정유예)") == ("미지정", False)
+    assert status_of("불성실공시법인지정예고(공시불이행)") == ("지정예고", False)
+    assert status_of("[채권]채권상장법인불성실공시") == ("채권", False)
+    # 사유는 겹칠 수 있다. 하나로 접지 않는다.
+    assert reason_of("불성실공시법인지정(공시번복,공시불이행)") == "공시번복+공시불이행"
+    assert reason_of("불성실공시법인지정") == "사유불명"
