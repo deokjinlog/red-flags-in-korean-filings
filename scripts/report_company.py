@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import html
 import json
 import re
@@ -116,6 +117,7 @@ def render(c, extra: dict) -> str:
     boxes_html = listing_section(c.corp_code, c.fiscal_year)
     split = (f'<p class="split">{rich(c.drift)}</p>' if c.drift else "")
     audited = (f'<p class="split">{rich(c.auditor)}</p>' if c.auditor else "")
+    disclosed = (f'<p class="split">{rich(c.disclosure)}</p>' if c.disclosure else "")
     moving = drift_line(c, context)
     fired = "".join(card(f, "measured") for f in c.fired) or         '<p class="none">채택된 신호에 걸린 항목이 없습니다.</p>'
     ref = "".join(card(f, "failed") for f in c.reference) or '<p class="none">없음</p>'
@@ -286,6 +288,7 @@ footer{{border-top:1px solid var(--rule);padding-top:1.3rem;color:var(--ink-3);
     <div class="line">{rich(c.summary)}</div>
     {split}
     {audited}
+    {disclosed}
     {moving}
     <p>0개 걸린 회사는 <b>0.00~0.20%</b>, 5개 이상은 <b>5.54~10.18%</b> 가 이후 2년 안에
        부도·회생·관리절차·상장폐지로 갔습니다. 그래도 <b>걸린 회사의 90~99%는
@@ -456,6 +459,25 @@ def listing_section(code: str, year: str) -> str:
 def _read_json(path: str) -> dict:
     p = Path(path)
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+
+def bad_disclosure_count(name: str, as_of: str) -> int | None:
+    """최근 3년 불성실공시 지정 횟수. 명단이 없으면 None.
+
+    지정 이력은 **전수 명단**이라 명단에 없으면 0 이 맞다 — 감사의견처럼 "못 받았다"
+    가 아니다. 다만 파일 자체가 없으면 그건 모르는 것이다.
+    """
+    path = Path("data/kind_bad_disclosure.csv")
+    if not path.exists():
+        return None
+    start = str(int(as_of[:4]) - 3) + as_of[4:]
+    n = 0
+    with path.open(encoding="utf-8") as fh:
+        for row in csv.DictReader(fh):
+            if (row["is_signal"] == "1" and row["corp_name"] == name
+                    and start < row["date"] <= as_of):
+                n += 1
+    return n
 
 
 def audit_state(code: str, year: str) -> tuple[str | None, str | None]:
@@ -655,7 +677,10 @@ def main(argv: list[str] | None = None) -> int:
     c = build(args.name, code, fin.fiscal_year or "미상", flags, known,
               worsening=retained_worsening(code, fin.fiscal_year or ""),
               audit=(_a := audit_state(code, fin.fiscal_year or ""))[0],
-              audit_year=_a[1])
+              audit_year=_a[1],
+              bad_disclosure=bad_disclosure_count(
+                  args.name, f"{int(fin.fiscal_year) + 1}0630"
+                  if (fin.fiscal_year or "").isdigit() else "20260630"))
     out = Path(args.out or f"data/report_{args.name}.html")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(render(c, extra), encoding="utf-8")

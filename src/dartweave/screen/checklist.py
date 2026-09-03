@@ -20,6 +20,7 @@ from dartweave.screen.flags import (
     Flag,
     audit_split,
     direction_split,
+    disclosure_split,
     flag_count_summary,
     is_adopted,
     verification_of,
@@ -138,6 +139,7 @@ class Checklist:
     worsening: bool | None = None    # 이익잉여금 3년 방향. None = 판정 못 함
     audit: str | None = None         # 'adverse'/'concern'/'none'. None = 감사의견 못 받음
     audit_year: str | None = None    # 그 감사의견이 어느 사업연도 것인가
+    bad_disclosure: int | None = None  # 최근 3년 불성실공시 지정 횟수. None = 명단 없음
 
     @property
     def summary(self) -> str:
@@ -162,12 +164,22 @@ class Checklist:
         """
         return audit_split(len(self.fired), self.audit, self.audit_year)
 
+    @property
+    def disclosure(self) -> str:
+        """공시 행태 — 재무제표 밖에서 오는 유일한 층.
+
+        감사 층과 같이 **좁혀준다**. 재무 신호가 없으면 이것만으로는 뜻이 없다
+        (핵심 5종 밖 + 불성실공시만 있던 33사 중 부실 0건).
+        """
+        return disclosure_split(len(self.fired), self.bad_disclosure)
+
 
 def build(name: str, corp_code: str, fiscal_year: str, flags: list[Flag],
           known: dict[str, bool | None],
           worsening: bool | None = None,
           audit: str | None = None,
-          audit_year: str | None = None) -> Checklist:
+          audit_year: str | None = None,
+          bad_disclosure: int | None = None) -> Checklist:
     """`screen()` 결과를 네 덩어리로 가른다.
 
     `known` 은 채택 신호별 판정 결과다(True/False/None). **걸린 것만으로는 부족하다** —
@@ -188,6 +200,7 @@ def build(name: str, corp_code: str, fiscal_year: str, flags: list[Flag],
         worsening=worsening,
         audit=audit,
         audit_year=audit_year,
+        bad_disclosure=bad_disclosure,
     )
 
 

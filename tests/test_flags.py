@@ -580,3 +580,16 @@ def test_korean_particle_agrees_with_the_final_jamo():
     assert _subject("계속기업 경고") == "계속기업 경고가"
     assert _subject("의견거절·한정") == "의견거절·한정이"
     assert _subject("CB") == "CB가"          # 한글이 아니면 기본형
+
+
+def test_bad_disclosure_narrows_but_never_stands_alone():
+    """재무 신호가 없으면 공시 행태만으로는 예고되지 않는다 — 실측 부실 0건이었다."""
+    from dartweave.screen.flags import disclosure_split
+
+    strong = disclosure_split(5, 2)
+    assert "29.9%" in strong and "5.2%" in strong
+    alone = disclosure_split(2, 1)
+    assert "0건" in alone and "이것만으로 예고되지 않습니다" in alone
+    # 명단을 못 받은 것과 지정이 없는 것은 다르다.
+    assert disclosure_split(5, None) == ""
+    assert disclosure_split(0, 0) and "없습니다" in disclosure_split(0, 0)
