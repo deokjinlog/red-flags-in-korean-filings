@@ -140,3 +140,34 @@ def test_bad_disclosure_does_not_count_the_cleared():
     # 사유는 겹칠 수 있다. 하나로 접지 않는다.
     assert reason_of("불성실공시법인지정(공시번복,공시불이행)") == "공시번복+공시불이행"
     assert reason_of("불성실공시법인지정") == "사유불명"
+
+
+def test_bad_disclosure_excludes_the_shadow_events():
+    """지정되면 거래정지가 따라붙는다 — 같은 사건이라 따로 세면 한 회사를 두 번 센다."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from collect_kind_bad_disclosure import status_of, violations_of
+
+    assert status_of("주권매매거래정지(불성실공시법인 지정)") == ("거래정지(그림자)", False)
+    # 다른 제도인데 제목에 '불성실공시' 가 들어가 딸려온다.
+    assert status_of("불성실공시(의결권공시)") == ("의결권공시", False)
+    assert status_of("불성실공시법인지정(공시번복)") == ("지정", True)
+
+    # 제목에 위반 건수가 붙는다. 벌점은 본문에 있어 여기서 못 뽑는다.
+    assert violations_of("불성실공시법인지정(공시번복 3건)") == 3
+    assert violations_of("불성실공시법인지정(공시번복)") == 1
+
+
+def test_kind_collectors_stop_when_a_page_repeats():
+    """끝을 넘기면 빈 응답이 아니라 마지막 장이 되풀이돼 온다 — 조용히 불어난다."""
+    from pathlib import Path
+
+    for name in ("collect_kind_admin_history", "collect_kind_bad_disclosure"):
+        src = Path(f"scripts/{name}.py").read_text(encoding="utf-8")
+        assert "page_rows == prev_page" in src, name
+        assert "되풀이" in src, name
+    # 상장폐지 수집기는 '새 행이 없으면 중단' 으로 같은 것을 막는다.
+    assert "len(seen) == before" in Path("scripts/collect_delisting.py").read_text(
+        encoding="utf-8")

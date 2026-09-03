@@ -21,6 +21,13 @@
 ⚠️ 벌점은 제목에 없다. 공시 본문에 있다. "몇 점 이상이면 위험한가" 를 재려면
    본문을 받아야 한다 — 지금은 **횟수만** 센다.
 
+
+⚠️ **페이지 끝을 넘기면 빈 응답이 아니라 마지막 장을 되풀이해서 준다.** 실측으로
+   2019년 관리종목은 4장(46행)이 끝인데 5장·9장을 요청해도 같은 46행이 온다.
+   마지막 장이 정확히 100행이면 "행 수가 100 미만이면 중단" 이 안 걸려서 같은 장을
+   계속 받는다. 중복 제거가 있어 데이터는 안 틀리지만 요청은 낭비되고, 중복 제거를
+   빼는 순간 조용히 몇 배로 불어난다. **직전 장과 같으면 멈춘다.**
+
 사용:
     uv run python scripts/collect_kind_bad_disclosure.py --from 2019 --to 2026 \
         --out data/kind_bad_disclosure.csv
@@ -43,6 +50,11 @@ from collect_kind_admin_history import fetch, parse  # noqa: E402  같은 엔드
 STATUS_RULES: tuple[tuple[str, str, bool], ...] = (
     # (패턴, 이름, 신호로 세나)
     (r"\[채권\]|채권상장법인", "채권", False),
+    # 의결권공시는 다른 제도인데 제목에 '불성실공시' 가 들어가 같이 딸려온다.
+    (r"의결권공시", "의결권공시", False),
+    # 지정되면 거래정지가 따라붙는다(실측 104건). **같은 사건의 그림자**라 따로 세면
+    # 한 회사가 두 번 세어진다. '지정' 보다 먼저 걸러야 한다.
+    (r"매매거래정지|거래정지", "거래정지(그림자)", False),
     (r"미지정", "미지정", False),
     (r"지정예고|예고", "지정예고", False),
     (r"해제|취소", "해제", False),
@@ -64,6 +76,16 @@ def status_of(title: str) -> tuple[str, bool]:
     return "기타", False
 
 
+def violations_of(title: str) -> int:
+    """제목에 적힌 위반 건수. "공시번복 2건" 처럼 붙는다. 없으면 1.
+
+    벌점은 아니지만 **한 번 지정에 몇 건이 걸렸는지**는 알 수 있다. 벌점은 공시
+    본문에 있어서 여기서는 못 뽑는다.
+    """
+    hits = [int(x) for x in re.findall(r"(\d+)\s*건", title)]
+    return max(hits) if hits else 1
+
+
 def reason_of(title: str) -> str:
     flat = re.sub(r"\s+", "", title)
     hits = [name for pattern, name in REASON_RULES if re.search(pattern, flat)]
@@ -82,6 +104,7 @@ def main(argv: list[str] | None = None) -> int:
     rows: list[dict] = []
     for year in range(args.frm, args.to + 1):
         got = 0
+        prev_page: list[dict] | None = None
         for page in range(1, 21):
             try:
                 page_rows = parse(fetch(f"{year}-01-01", f"{year}-12-31", page,
@@ -91,6 +114,10 @@ def main(argv: list[str] | None = None) -> int:
                 break
             if not page_rows:
                 break
+            # 끝을 넘기면 마지막 장이 되풀이돼서 온다. 직전 장과 같으면 멈춘다.
+            if prev_page is not None and page_rows == prev_page:
+                break
+            prev_page = page_rows
             for r in page_rows:
                 key = (r["date"], r["corp_name"], r["title"])
                 if key in seen:
@@ -100,6 +127,7 @@ def main(argv: list[str] | None = None) -> int:
                 rows.append({"date": r["date"], "corp_name": r["corp_name"],
                              "title": r["title"], "market": r["market"],
                              "status": status, "reason": reason_of(r["title"]),
+                             "violations": str(violations_of(r["title"])),
                              "is_signal": "1" if counts else "0"})
                 got += 1
             if len(page_rows) < 100:
@@ -112,7 +140,8 @@ def main(argv: list[str] | None = None) -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=["date", "corp_name", "title", "market",
-                                           "status", "reason", "is_signal"])
+                                           "status", "reason", "violations",
+                                           "is_signal"])
         w.writeheader()
         w.writerows(rows)
 

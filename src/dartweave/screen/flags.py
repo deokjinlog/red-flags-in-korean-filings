@@ -900,6 +900,19 @@ _BAD_DISCLOSURE_SPLIT: dict[int, tuple[int, float, int, float]] = {
 # 핵심 5종 밖에서 불성실공시만 있는 회사 — 두 시점 다 부실 0건.
 _BAD_DISCLOSURE_ALONE = (33, 0.0)
 
+# 횟수가 곧 용량이다 — 두 시점 모두 단조로 오른다 (해당 사수 · 부실률 T=2023/T=2024):
+#
+#   1회    138사  5.1%  /  124사  8.9%
+#   2회     31사 19.4%  /   37사 24.3%
+#   3회+    10사 40.0%  /   13사 38.5%
+#
+# **벌점은 안 받는다.** 벌점은 공시 본문에 있어서 1,021건을 더 받아야 하는데, 규정선
+# (누적 8점이면 관리종목 지정)은 우리가 관리종목을 이미 직접 관측하고 있다. 벌점을
+# 긁는 건 같은 것을 한 다리 건너 재는 셈이라 하지 않는다. 횟수로 충분하다.
+_BAD_DISCLOSURE_TIMES: tuple[tuple[int, int, float], ...] = (
+    (2, 50, 28.0),      # 2회 이상 — 두 시점 24.4% / 28.0%
+)
+
 
 def disclosure_split(fired: int, count: int | None) -> str:
     """불성실공시 지정 이력이 같은 구간 안에서 가르는 정도.
@@ -920,6 +933,11 @@ def disclosure_split(fired: int, count: int | None) -> str:
                 f"않으면서 불성실공시만 있던 {n}사 중 이후 2년 부실은 **0건**이었습니다.")
     n_bad, r_bad, n_ok, r_ok = _BAD_DISCLOSURE_SPLIT[min(fired, 5)]
     tag = f"{min(fired, 5)}개"
-    return (f"게다가 최근 3년에 **불성실공시 법인으로 {count}회 지정**됐습니다. 같은 "
+    body = (f"게다가 최근 3년에 **불성실공시 법인으로 {count}회 지정**됐습니다. 같은 "
             f"{tag} 걸렸고 불성실공시 이력도 있던 {n_bad}사 중 {r_bad:.1f}%가 부실로 "
             f"갔습니다 — 이력이 없던 {n_ok}사는 {r_ok:.1f}%였습니다.")
+    if count >= 2:
+        n, rate = _BAD_DISCLOSURE_TIMES[0][1], _BAD_DISCLOSURE_TIMES[0][2]
+        body += (f" 횟수도 그대로 따라옵니다 — **2회 이상**이었던 {n}사의 부실률은 "
+                 f"{rate:.1f}%로, 1회(8.9%)의 세 배입니다.")
+    return body
