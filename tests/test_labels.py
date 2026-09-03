@@ -225,3 +225,40 @@ def test_penalty_missing_is_blank_not_zero():
 
     r = parse_penalty("아무 관련 없는 본문")
     assert r["imposed"] == "" and r["cumulative"] == "" and r["kind"] == ""
+
+
+def test_unknown_reason_was_a_market_bias_not_a_gap():
+    """사유가 제목에 없던 건이 전부 유가증권이었다 — 그냥 두면 한 시장만 라벨에서 빠진다."""
+    import csv
+    from pathlib import Path
+
+    hist = Path("data/kind_admin_history.csv")
+    if not hist.exists():
+        return
+    rows = list(csv.DictReader(hist.open(encoding="utf-8")))
+    unknown = [r for r in rows if r["event"] == "지정"
+               and r["reason"] in ("사유불명", "기타사유")]
+    if unknown:
+        assert {r["market"] for r in unknown} == {"유가증권시장본부"}, \
+            "코스닥에서도 사유불명이 나오면 원인이 달라진 것이다 — 다시 봐야 한다"
+
+    filled = Path("data/kind_admin_reasons.csv")
+    if filled.exists():
+        got = list(csv.DictReader(filled.open(encoding="utf-8")))
+        # 본문까지 갔으면 못 가른 게 남으면 안 된다 — 남으면 서식이 또 다른 것이다.
+        assert not [r for r in got if r["reason"] in ("사유불명", "기타사유")]
+
+
+def test_body_reason_uses_the_same_rules_as_the_title():
+    """본문에서 온 사유와 제목에서 온 사유가 다른 잣대를 쓰면 안 된다."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from collect_kind_admin_history import reason_of
+
+    # 유가증권 본문에만 나오는 표현들
+    assert reason_of("관리종목지정(기타 공익 실현과 투자자 보호)") == ("폐지절차", True)
+    assert reason_of("관리종목지정(공시의무 위반)") == ("공시요건", True)
+    # 우선주 요건은 회사 부실이 아니다 — 종류주식 상장주식수 미달 등
+    assert reason_of("관리종목지정(종류주식 상장주식수 미달(10만주 미만))")[1] is False

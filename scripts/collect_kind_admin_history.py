@@ -84,12 +84,15 @@ REASON_RULES: tuple[tuple[str, str, bool], ...] = (
     # 스팩이 먼저다. "상장예비심사청구서 미제출" 94건이 폐지절차로 들어가면
     # 껍데기의 예정된 청산이 부실로 세어진다.
     (r"SPAC|스팩|상장예비심사|합병상장예비심사", "스팩", False),
-    (r"상장폐지|실질심사|폐지사유", "폐지절차", True),
+    # "기타 공익 실현과 투자자 보호" 는 유가증권 상장규정의 상장적격성 실질심사
+    # 사유다. 제목에는 안 나오고 본문에만 나온다 — 본문에서 온 것도 같은 잣대를
+    # 써야 해서 여기 넣는다.
+    (r"상장폐지|실질심사|폐지사유|공익실현|공익", "폐지절차", True),
     (r"회생|파산|부도", "법적절차", True),
     (r"자본잠식", "자본잠식", True),
     (r"의견거절|부적정|한정|감사의견|검토의견", "감사", True),
     (r"법인세비용차감전|계속사업손실|영업손실|매출액|자기자본", "손익요건", True),
-    (r"보고서\s*미제출|공시위반|불성실공시|공시번복", "공시요건", True),
+    (r"보고서\s*미제출|공시위반|공시의무|불성실공시|공시번복", "공시요건", True),
     # 아래는 부실로 세지 않는다 — 규모는 우리가 층으로 통제하는 축이다.
     (r"시가총액|주가|거래량|상장주식수|주식분산|소액주주|거래실적부진",
      "규모·유동성", False),
@@ -198,7 +201,10 @@ def main(argv: list[str] | None = None) -> int:
                 if key in seen:
                     continue
                 seen.add(key)
-                rows.append(r)
+                rows.append({"date": r["date"], "corp_name": r["corp_name"],
+                             "acptno": r.get("acptno", ""), "title": r["title"],
+                             "market": r["market"], "event": r["event"],
+                             "reason": r["reason"], "is_distress": r["is_distress"]})
                 got += 1
             if len(page_rows) < 100:
                 break
@@ -209,8 +215,8 @@ def main(argv: list[str] | None = None) -> int:
     rows.sort(key=lambda r: (r["date"], r["corp_name"]))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=["date", "corp_name", "title", "market",
-                                           "event", "reason", "is_distress"])
+        w = csv.DictWriter(fh, fieldnames=["date", "corp_name", "acptno", "title",
+                                           "market", "event", "reason", "is_distress"])
         w.writeheader()
         w.writerows(rows)
 

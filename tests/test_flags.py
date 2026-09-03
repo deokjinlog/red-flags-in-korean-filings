@@ -613,3 +613,15 @@ def test_penalty_says_nothing_when_there_is_nothing_to_say():
 
     assert penalty_band(0.0) == ""
     assert penalty_band(None) == ""
+
+
+def test_substituted_penalty_is_not_restored_into_the_signal():
+    """대체부과 벌점을 복원해 쓰면 덜 위험한 회사를 위험 쪽으로 올린다."""
+    from pathlib import Path
+
+    from dartweave.screen import flags
+
+    src = Path(flags.__file__).read_text(encoding="utf-8")
+    # 왜 복원값을 안 쓰는지가 코드에 남아 있어야 한다 — 실측이 근거다.
+    assert "복원해서 쓰면 안 된다" in src
+    assert "대체부과만 있던 회사" in src and "×3.9" in src

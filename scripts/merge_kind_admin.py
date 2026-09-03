@@ -54,6 +54,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--src", default="data/kind_admin_history.csv")
     p.add_argument("--corpcode", default="data/corpcode.json")
     p.add_argument("--delisting", default="data/delisting.json")
+    p.add_argument("--reasons", default="data/kind_admin_reasons.csv",
+                   help="제목에 사유가 없는 건을 본문에서 채운 것")
     p.add_argument("--load", action="store_true")
     args = p.parse_args(argv)
 
@@ -67,9 +69,21 @@ def main(argv: list[str] | None = None) -> int:
         if not is_distress(x["kind"]):
             benign.setdefault(x["corp_code"], []).append(_date(x["date"]))
 
+    # 제목에 사유가 없던 건은 본문에서 채운 값으로 덮는다. 이걸 안 하면 유가증권
+    # 회사만 라벨에서 빠진다 — 실측으로 사유불명 107건이 **전부 유가증권시장본부**였다.
+    # 결측이 아니라 시장 단위 편향이고, 그건 신호가 아니라 수집 방식이 만든 것이다.
+    filled: dict[str, dict] = {}
+    rpath = Path(args.reasons)
+    if rpath.exists():
+        for row in csv.DictReader(rpath.open(encoding="utf-8")):
+            filled[row["acptno"]] = row
+
     kept: dict[tuple[str, str], dict] = {}
     drop = Counter()
     for r in rows:
+        got = filled.get(r.get("acptno", ""))
+        if got and r["reason"] in ("사유불명", "기타사유"):
+            r = {**r, "reason": got["reason"], "is_distress": got["is_distress"]}
         if r["event"] != "지정":
             drop[f"사건 아님({r['event']})"] += 1
             continue
