@@ -171,3 +171,57 @@ def test_kind_collectors_stop_when_a_page_repeats():
     # 상장폐지 수집기는 '새 행이 없으면 중단' 으로 같은 것을 막는다.
     assert "len(seen) == before" in Path("scripts/collect_delisting.py").read_text(
         encoding="utf-8")
+
+
+def test_penalty_parser_handles_both_form_layouts():
+    """코스닥(70758)과 유가증권(99802)이 서식이 다르다 — 한쪽만 보면 절반이 빈다."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from collect_kind_penalty import parse_penalty
+
+    kosdaq = ("1. 불성실공시법인 지정내역 유형 공시번복 내용 조회공시 답변 이후 "
+              "최대주주 변경 원공시일 2018-12-06 부과벌점 9.0 "
+              "공시위반제재금(원) 36,000,000 공시책임자 등 교체요구 여부 미해당 "
+              "2. 최근 1년간 불성실공시법인 부과벌점(당해 부과벌점 포함) 9.0 "
+              "3. 근거규정 코스닥시장공시규정")
+    kospi = ("2. 불성실공시 유형 공시불이행 3. 불성실공시 내용 지연공시 4. 지정일 "
+             "5. 부과벌점 현황 부과벌점 0 기 부과벌점 0 누계벌점 0 "
+             "6. 공시위반제재금(원) 10,000,000 7. 공시책임자 등 교체요구 여부 미해당 "
+             "9. 공시위반관리종목 여부 미해당")
+    a, b = parse_penalty(kosdaq), parse_penalty(kospi)
+    assert a["kind"] == "공시번복" and a["imposed"] == "9" and a["cumulative"] == "9"
+    assert a["fine"] == "36000000"
+    assert b["kind"] == "공시불이행" and b["cumulative"] == "0"
+    assert b["admin_flag"] == "미해당"
+
+
+def test_penalty_zero_is_not_lenient_when_a_fine_replaced_it():
+    """코스닥은 벌점을 제재금으로 대체부과한다 — 벌점만 보면 통째로 0 점으로 읽힌다."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from collect_kind_penalty import parse_penalty
+
+    text = ("유형 공시변경 내용 유상증자 변경 부과벌점 0.0 공시위반제재금(원) 16,000,000 "
+            "공시책임자 등 교체요구 여부 미해당 "
+            "4. 기타 * 동사의 부과벌점은 4.0점이며, 이에 대하여 공시위반 제재금 "
+            "1,600만원(4.0점*400만원)을 대체부과함")
+    r = parse_penalty(text)
+    assert r["imposed"] == "0", "본문에 적힌 값은 그대로 둔다"
+    assert r["substitute"] == "Y"
+    assert r["effective"] == "4", "대체부과면 실질 벌점을 복원한다"
+
+
+def test_penalty_missing_is_blank_not_zero():
+    """못 찾은 걸 0 으로 채우면 진짜 0 점과 못 가른다."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from collect_kind_penalty import parse_penalty
+
+    r = parse_penalty("아무 관련 없는 본문")
+    assert r["imposed"] == "" and r["cumulative"] == "" and r["kind"] == ""

@@ -125,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
                 seen.add(key)
                 status, counts = status_of(r["title"])
                 rows.append({"date": r["date"], "corp_name": r["corp_name"],
+                             "acptno": r.get("acptno", ""),
                              "title": r["title"], "market": r["market"],
                              "status": status, "reason": reason_of(r["title"]),
                              "violations": str(violations_of(r["title"])),
@@ -139,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
     rows.sort(key=lambda r: (r["date"], r["corp_name"]))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=["date", "corp_name", "title", "market",
+        w = csv.DictWriter(fh, fieldnames=["date", "corp_name", "acptno", "title", "market",
                                            "status", "reason", "violations",
                                            "is_signal"])
         w.writeheader()

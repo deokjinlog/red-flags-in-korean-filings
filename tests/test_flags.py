@@ -593,3 +593,23 @@ def test_bad_disclosure_narrows_but_never_stands_alone():
     # 명단을 못 받은 것과 지정이 없는 것은 다르다.
     assert disclosure_split(5, None) == ""
     assert disclosure_split(0, 0) and "없습니다" in disclosure_split(0, 0)
+
+
+def test_penalty_line_is_the_rulebook_not_ours():
+    """8점은 코스닥 공시규정의 관리종목 지정선이다 — 우리가 고른 임계가 아니다."""
+    from dartweave.screen.flags import PENALTY_LINE, penalty_band
+
+    assert PENALTY_LINE == 8.0
+    high = penalty_band(9.0)
+    assert "8점 이상" in high and "관리종목 지정선" in high
+    assert "우리가 고른 값이 아니고" in high
+    low = penalty_band(2.5)
+    assert "0~4점" in low and "관리종목 지정선" not in low
+
+
+def test_penalty_says_nothing_when_there_is_nothing_to_say():
+    """지정된 적이 없으면 벌점 문장을 내지 않는다 — 같은 사실을 두 번 말하지 않는다."""
+    from dartweave.screen.flags import penalty_band
+
+    assert penalty_band(0.0) == ""
+    assert penalty_band(None) == ""

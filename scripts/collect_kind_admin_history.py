@@ -152,10 +152,14 @@ def parse(page_html: str) -> list[dict]:
         title = cells[3]
         event = event_of(title)
         reason, distress = reason_of(title)
+        # 접수번호는 셀 텍스트가 아니라 링크의 onclick 에 있다 —
+        # openDisclsViewer('20230630000781',''). 본문을 받으려면 이게 필요하다.
+        acpt = re.search(r"openDisclsViewer\('(\d{8,})'", tr)
         out.append({
             "date": "".join(stamp.groups()),
             "corp_name": cells[2],
             "title": title,
+            "acptno": acpt.group(1) if acpt else "",
             "market": cells[4] if len(cells) > 4 else "",
             "event": event,
             "reason": reason,

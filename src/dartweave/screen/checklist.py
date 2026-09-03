@@ -21,6 +21,7 @@ from dartweave.screen.flags import (
     audit_split,
     direction_split,
     disclosure_split,
+    penalty_band,
     flag_count_summary,
     is_adopted,
     verification_of,
@@ -140,6 +141,7 @@ class Checklist:
     audit: str | None = None         # 'adverse'/'concern'/'none'. None = 감사의견 못 받음
     audit_year: str | None = None    # 그 감사의견이 어느 사업연도 것인가
     bad_disclosure: int | None = None  # 최근 3년 불성실공시 지정 횟수. None = 명단 없음
+    penalty: float | None = None       # 최근 3년 최대 누계벌점. None = 모름
 
     @property
     def summary(self) -> str:
@@ -173,13 +175,19 @@ class Checklist:
         """
         return disclosure_split(len(self.fired), self.bad_disclosure)
 
+    @property
+    def penalty_line(self) -> str:
+        """누계벌점 구간 — 이 도구가 규정을 베끼지 않고 검증하는 자리다."""
+        return penalty_band(self.penalty)
+
 
 def build(name: str, corp_code: str, fiscal_year: str, flags: list[Flag],
           known: dict[str, bool | None],
           worsening: bool | None = None,
           audit: str | None = None,
           audit_year: str | None = None,
-          bad_disclosure: int | None = None) -> Checklist:
+          bad_disclosure: int | None = None,
+          penalty: float | None = None) -> Checklist:
     """`screen()` 결과를 네 덩어리로 가른다.
 
     `known` 은 채택 신호별 판정 결과다(True/False/None). **걸린 것만으로는 부족하다** —
@@ -201,6 +209,7 @@ def build(name: str, corp_code: str, fiscal_year: str, flags: list[Flag],
         audit=audit,
         audit_year=audit_year,
         bad_disclosure=bad_disclosure,
+        penalty=penalty,
     )
 
 

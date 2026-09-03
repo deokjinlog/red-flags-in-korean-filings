@@ -69,6 +69,7 @@ SIGNALS_ORDER = ("완전자본잠식", "부분자본잠식", "자본잠식(완�
                  "감사 경고 (거절·한정·계속기업)",
                  # E축 — 공시 행태. 재무를 안 보고도 되는 유일한 축이다.
                  "최근 3년 불성실공시", "최근 3년 불성실공시 2회 이상",
+                 "최근 3년 누계벌점 4점 이상", "최근 3년 누계벌점 8점 이상",
                  # D축 — 조달 이력. 점검표가 가장 무겁게 치는데 검정된 적이 없다.
                  "최근 3년 CB·BW 발행", "최근 3년 CB·BW 2회 이상",
                  # C축 — 오너 리스크. 내부자가 팔고 있나, 최대주주가 자주 바뀌나.
@@ -106,6 +107,7 @@ def features(
     insider: dict | None = None,
     audit: str | None = None,
     bad_disclosure: int | None = None,
+    penalty: float | None = None,
 ) -> dict[str, bool | None]:
     """재무 신호 후보. 값이 없으면 None — 모르는 걸 '아니다' 로 세지 않는다."""
     equity, capital = _get(acc, "자본총계"), _get(acc, "자본금")
@@ -248,6 +250,15 @@ def features(
                         else bad_disclosure >= 1),
         "최근 3년 불성실공시 2회 이상": (None if bad_disclosure is None
                               else bad_disclosure >= 2),
+        # 벌점 — 이진을 등급으로 바꾼다. 벌점 1점짜리 한 번과 15점은 같은 사건이 아니다.
+        #
+        # **8점은 우리가 고른 값이 아니라 코스닥 공시규정의 관리종목 지정선이다.**
+        # 그런데 이 저장소가 규정을 베끼는 게 아니라 검증하는 자리이기도 하다 —
+        # 전량 1,021건으로 재보니 실측이 규정선과 맞았다(두 시점 단조):
+        #   0~4점 2.2%/6.4% · 4~8점 8.9%/13.9% · 8점+ 25.0%/31.8%
+        # (유가증권은 15점이 선이다. 시장을 섞은 값이라 아래 검정으로 흔들어본다.)
+        "최근 3년 누계벌점 4점 이상": (None if penalty is None else penalty >= 4),
+        "최근 3년 누계벌점 8점 이상": (None if penalty is None else penalty >= 8),
     }
 
 
@@ -389,6 +400,7 @@ def build_features(
     insider_path: str = "data/insider.json",
     audit_path: str = "data/audit_opinions.json",
     bad_path: str = "data/kind_bad_disclosure.csv",
+    penalty_path: str = "data/kind_penalty.csv",
 ) -> tuple[dict[str, dict], dict[str, float]]:
     """기준시점 하나의 (회사 → 신호 여부, 회사 → 자산총계).
 
@@ -469,6 +481,31 @@ def build_features(
                     counts_bad[code] += 1
         bad_of = dict(counts_bad)
 
+    # 벌점 — 창 안 지정 건들의 **최대 누계벌점**. 합이 아니라 최대인 이유는 누계가
+    # 이미 "최근 1년간 합" 이라서다(코스닥) — 더하면 같은 벌점을 여러 번 센다.
+    penalty_of: dict[str, float] | None = None
+    pen_file = Path(penalty_path)
+    if bad_of is not None and pen_file.exists():
+        import csv as _csv2
+
+        book: dict[str, str] = {}
+        with pen_file.open(encoding="utf-8") as fh:
+            for row in _csv2.DictReader(fh):
+                book[row["acptno"]] = row["cumulative"]
+        peak: dict[str, float] = defaultdict(float)
+        with bad_file.open(encoding="utf-8") as fh:
+            for row in _csv.DictReader(fh):
+                if row["is_signal"] != "1":
+                    continue
+                code = cc_map.get(row["corp_name"])
+                if not code or not (window_from < row["date"] <= as_of):
+                    continue
+                raw = book.get(row["acptno"], "")
+                if raw:
+                    peak[code] = max(peak[code], float(raw))
+        # 불성실공시가 없던 회사는 0 점이다 — 명단이 전수라서 "모름" 이 아니다.
+        penalty_of = {c: peak.get(c, 0.0) for c in acc_now}
+
     years3 = [year, str(int(year) - 1), str(int(year) - 2)]
     hist = lambda c: [(fin.get(y, {}).get(c) or {}, cash.get(y, {}).get(c) or {})
                       for y in years3]
@@ -488,7 +525,8 @@ def build_features(
                          due_of.get(c, Due(0.0, 0, 0)) if terms else None,
                          counts.get(c, 0) if bonds else None, owner_of(c),
                          audit_of.get(c),
-                         (bad_of.get(c, 0) if bad_of is not None else None))
+                         (bad_of.get(c, 0) if bad_of is not None else None),
+                         (penalty_of.get(c, 0.0) if penalty_of is not None else None))
              for c in pool}
     return feats, {c: float(acc_now[c]["자산총계"]) for c in pool}
 

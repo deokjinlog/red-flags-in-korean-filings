@@ -118,6 +118,7 @@ def render(c, extra: dict) -> str:
     split = (f'<p class="split">{rich(c.drift)}</p>' if c.drift else "")
     audited = (f'<p class="split">{rich(c.auditor)}</p>' if c.auditor else "")
     disclosed = (f'<p class="split">{rich(c.disclosure)}</p>' if c.disclosure else "")
+    penalised = (f'<p class="split">{rich(c.penalty_line)}</p>' if c.penalty_line else "")
     moving = drift_line(c, context)
     fired = "".join(card(f, "measured") for f in c.fired) or         '<p class="none">채택된 신호에 걸린 항목이 없습니다.</p>'
     ref = "".join(card(f, "failed") for f in c.reference) or '<p class="none">없음</p>'
@@ -289,6 +290,7 @@ footer{{border-top:1px solid var(--rule);padding-top:1.3rem;color:var(--ink-3);
     {split}
     {audited}
     {disclosed}
+    {penalised}
     {moving}
     <p>0개 걸린 회사는 <b>0.00~0.20%</b>, 5개 이상은 <b>5.54~10.18%</b> 가 이후 2년 안에
        부도·회생·관리절차·상장폐지로 갔습니다. 그래도 <b>걸린 회사의 90~99%는
@@ -478,6 +480,22 @@ def bad_disclosure_count(name: str, as_of: str) -> int | None:
                     and start < row["date"] <= as_of):
                 n += 1
     return n
+
+
+def penalty_peak(name: str, as_of: str) -> float | None:
+    """최근 3년 최대 누계벌점. 누계는 이미 "최근 1년간 합" 이라 더하지 않고 최대를 쓴다."""
+    bad, pen = Path("data/kind_bad_disclosure.csv"), Path("data/kind_penalty.csv")
+    if not (bad.exists() and pen.exists()):
+        return None
+    book = {r["acptno"]: r["cumulative"]
+            for r in csv.DictReader(pen.open(encoding="utf-8"))}
+    start = str(int(as_of[:4]) - 3) + as_of[4:]
+    peak = 0.0
+    for row in csv.DictReader(bad.open(encoding="utf-8")):
+        if (row["is_signal"] == "1" and row["corp_name"] == name
+                and start < row["date"] <= as_of and book.get(row["acptno"])):
+            peak = max(peak, float(book[row["acptno"]]))
+    return peak
 
 
 def audit_state(code: str, year: str) -> tuple[str | None, str | None]:
@@ -673,14 +691,15 @@ def main(argv: list[str] | None = None) -> int:
                 hit += 1
         extra[f"지분으로 엮인 곳 ({args.hops}홉)"] = (
             f"{len(near)}곳 · 그중 채택 신호에 걸린 곳 {hit}곳")
+    _asof = (f"{int(fin.fiscal_year) + 1}0630"
+             if (fin.fiscal_year or "").isdigit() else "20260630")
     extra["_context"] = build_context(code, fin.fiscal_year or "")
     c = build(args.name, code, fin.fiscal_year or "미상", flags, known,
               worsening=retained_worsening(code, fin.fiscal_year or ""),
               audit=(_a := audit_state(code, fin.fiscal_year or ""))[0],
               audit_year=_a[1],
-              bad_disclosure=bad_disclosure_count(
-                  args.name, f"{int(fin.fiscal_year) + 1}0630"
-                  if (fin.fiscal_year or "").isdigit() else "20260630"))
+              bad_disclosure=bad_disclosure_count(args.name, _asof),
+              penalty=penalty_peak(args.name, _asof))
     out = Path(args.out or f"data/report_{args.name}.html")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(render(c, extra), encoding="utf-8")
