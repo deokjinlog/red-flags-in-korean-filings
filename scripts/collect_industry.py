@@ -31,6 +31,8 @@ OUT = Path("data/industry.json")
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--limit", type=int, default=4000)
+    p.add_argument("--min-interval", type=float, default=0.25,
+                   help="요청 간격(초). 0 으로 두면 DART 가 연결을 끊는다 — 겪었다.")
     p.add_argument("--universe", default="data/universe_tested.json")
     args = p.parse_args(argv)
 
@@ -49,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"이어받을 게 없습니다 — {len(done):,}/{len(codes):,} · 업종 확보 {got:,}")
         return 0
 
-    client = DartClient(api_key=s.dart_api_key)
+    client = DartClient(api_key=s.dart_api_key, min_interval=args.min_interval)
     try:
         for i, code in enumerate(todo, 1):
             r = client.get_json("company.json", {"corp_code": code})

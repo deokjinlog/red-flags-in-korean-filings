@@ -625,3 +625,11 @@ def test_substituted_penalty_is_not_restored_into_the_signal():
     # 왜 복원값을 안 쓰는지가 코드에 남아 있어야 한다 — 실측이 근거다.
     assert "복원해서 쓰면 안 된다" in src
     assert "대체부과만 있던 회사" in src and "×3.9" in src
+
+
+def test_penalty_bands_never_report_a_thin_cell():
+    """칸당 20사 미만이면 순서를 말하지 않는다 — 260건 표본에서 이걸 어겨 결론이 뒤집혔다."""
+    from dartweave.screen.flags import _PENALTY_BANDS
+
+    assert all(n >= 20 for _, _, _, n, _, _ in _PENALTY_BANDS), \
+        "20사 미만 구간을 표에 넣으면 잡음을 순서로 읽게 된다"
