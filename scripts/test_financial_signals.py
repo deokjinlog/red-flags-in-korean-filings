@@ -42,7 +42,7 @@ from dartweave.screen.audit import (
 
 from dartweave.db.asof import CensoredWindowError, events_after
 from dartweave.screen.calendar import Due, due_within
-from dartweave.signal.labels import is_distress
+from dartweave.signal.labels import is_adverse
 from dartweave.signal.test import (
     Verdict,
     mantel_haenszel_ratio,
@@ -467,6 +467,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--terms", default="data/bond_terms.json")
     p.add_argument("--insider", default="data/insider.json")
     p.add_argument("--industry", default="data/industry.json")
+    p.add_argument("--include-warning", action="store_true",
+                   help="관리종목 지정(부실 사유)도 라벨로 센다. 표본이 두 배라 늘 "
+                        "유리해 보이므로 기본값은 꺼짐 — 켜면 보고서에 적어야 한다.")
     p.add_argument("--runs", type=int, default=8000)
     p.add_argument("--out", default="data/signal_results.json",
                    help="판정 결과를 기계가 읽을 수 있게 남긴다 — 손으로 옮기면 틀린다")
@@ -492,7 +495,8 @@ def main(argv: list[str] | None = None) -> int:
                 # 대신 **조용히 포함시키지도 않는다** — 그게 배율 비교를 어긋나게 한다.
                 print(f"\n{'=' * 74}\nT={T} 건너뜀 — {e}")
                 continue
-        label = {e.corp_code for e in events if is_distress(e.event_type)}
+        label = {e.corp_code for e in events
+             if is_adverse(e.event_type, include_warning=args.include_warning)}
         # 신호 정의는 `build_features` 한 곳에만 둔다. 여기에 같은 계산을 두 벌로
         # 갖고 있었는데, 인자를 하나 늘리자마자 위치 인자가 어긋나 조용히 다른 값이
         # 들어갔다 — 갈라진 정의는 이렇게 티가 안 나게 틀린다.

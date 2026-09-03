@@ -55,6 +55,39 @@ DELISTING_DISTRESS = frozenset({
 
 DISTRESS_TYPES = DART_DISTRESS | DELISTING_DISTRESS
 
+# ── 한 단계 이른 사건 ────────────────────────────────────────────────────
+# 관리종목 지정은 부실보다 이르고, 그래서 예고력이 더 클 수 있다. 그런데 위의
+# 부실 라벨과 **성질이 다르다** — 부도·회생·상장폐지는 되돌릴 수 없지만 관리종목은
+# 해제가 실제로 311건 있다.
+#
+# 한 덩어리로 섞으면 "부실" 이라는 말이 조용히 바뀌고 지금까지 잰 모든 배율이 다른
+# 뜻이 된다. 그래서 따로 둔다. 검정은 두 벌로 돌려 **둘 다 보고**한다 — 하나만
+# 쓰면 그게 유리해서 골랐는지 알 수 없다.
+#
+# 이 종류로 들어오는 것은 `merge_kind_admin.py` 가 두 번 거른 것이다:
+#   · 규모·유동성(시총·주가·거래량) 사유 제외 — "작다" 는 뜻이지 부실이 아니고,
+#     우리가 층으로 통제하는 그 규모와 충돌한다. 스팩·지배구조도 뺀다.
+#   · 인수로 인한 기계적 지정 제외 — 공개매수로 분산요건이 깨져 "상장폐지사유 발생"
+#     으로 지정되는 건 비상장화지 부실이 아니다. 실측으로 시차가 갈린다(인수 5건은
+#     지정 후 14~18일에 합병 폐지, 다음이 543일).
+WARNING_TYPES = frozenset({"관리종목(부실 사유)"})
+
+ADVERSE_TYPES = DISTRESS_TYPES | WARNING_TYPES
+
+
+def is_warning(event_type: str) -> bool:
+    """부실보다 한 단계 이른 사건인가 (관리종목 지정)."""
+    return event_type in WARNING_TYPES
+
+
+def is_adverse(event_type: str, *, include_warning: bool = False) -> bool:
+    """라벨로 셀 것인가. `include_warning` 이 켜지면 관리종목 지정도 센다.
+
+    기본값이 꺼져 있는 게 중요하다 — 켜는 쪽이 표본이 두 배라 늘 유리해 보인다.
+    켤 때는 그렇게 했다고 보고서에 적어야 한다.
+    """
+    return event_type in (ADVERSE_TYPES if include_warning else DISTRESS_TYPES)
+
 
 def is_distress(event_type: str) -> bool:
     """이 사건을 부실 라벨로 셀 것인가. 목록에 없으면 세지 않는다."""

@@ -78,3 +78,47 @@ def test_delisting_classifier_leaves_no_other_bucket():
     if src.exists():
         rows = json.loads(src.read_text(encoding="utf-8"))
         assert not [r for r in rows if classify(r["reason"]) == "상장폐지(기타)"]
+
+
+def test_warning_tier_is_separate_from_distress():
+    """관리종목 지정은 되돌릴 수 있다 — 부실과 한 덩어리로 섞으면 뜻이 바뀐다."""
+    from dartweave.signal.labels import (
+        DISTRESS_TYPES,
+        is_adverse,
+        is_distress,
+        is_warning,
+    )
+
+    assert is_warning("관리종목(부실 사유)")
+    assert not is_distress("관리종목(부실 사유)")
+    assert "관리종목(부실 사유)" not in DISTRESS_TYPES
+    # 기본값은 꺼져 있어야 한다. 켜는 쪽이 표본이 두 배라 늘 유리해 보인다.
+    assert not is_adverse("관리종목(부실 사유)")
+    assert is_adverse("관리종목(부실 사유)", include_warning=True)
+    # 부실은 어느 쪽에서도 부실이다.
+    assert is_adverse("회생") and is_adverse("회생", include_warning=True)
+
+
+def test_admin_designation_classifier_splits_size_from_distress():
+    """시총·주가 미달은 '작다' 는 뜻이다 — 부실로 세면 규모 통제와 충돌한다."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from collect_kind_admin_history import event_of, reason_of
+
+    assert reason_of("관리종목지정(시가총액 미달)") == ("규모·유동성", False)
+    assert reason_of("관리종목지정(자본잠식률 50% 이상 등)") == ("자본잠식", True)
+    # 스팩이 폐지절차보다 먼저 걸려야 한다 — 껍데기의 예정된 청산이다.
+    assert reason_of("관리종목지정(SPAC 상장예비심사청구서 미제출 등)") == ("스팩", False)
+    # 중첩 괄호. 비탐욕으로 자르면 "반기검토(감사" 만 남아 '부적정' 을 못 본다.
+    assert reason_of("관리종목지정(반기검토(감사)의견 부적정, 의견거절)")[0] == "감사"
+    # 사유가 제목에 없으면 '없음' 이 아니라 '모름' 이다.
+    assert reason_of("관리종목지정") == ("사유불명", None)
+
+    # "지정" 이라는 글자만 보면 안 된다 — 같은 사건을 여러 번 세게 된다.
+    assert event_of("내부결산시점 관리종목 지정ㆍ형식적 상장폐지ㆍ상장적격성 실질심사 "
+                    "사유 발생") == "내부결산 사유발생"
+    assert event_of("주권매매거래정지(관리종목지정사유발생)") == "거래정지"
+    assert event_of("신주인수권증권 상장폐지(기초주권의 관리종목 지정)") == "파생상품"
+    assert event_of("관리종목지정(상장폐지사유 발생)") == "지정"
