@@ -354,7 +354,7 @@ def test_no_member_list_means_no_judgement():
 
 def test_adopted_financial_signals_say_so():
     """검정을 통과한 둘 — 검정 상태에 '채택' 이 박혀 있어야 한다."""
-    for kind, ratio in (("결손금", "×9.47"), ("영업손실", "×8.30"), ("당기순손실", "×11.71")):
+    for kind, ratio in (("결손금", "×8.86"), ("영업손실", "×7.19"), ("당기순손실", "×11.12")):
         v = verification_of(kind)
         assert "채택" in v and "미검정" not in v and ratio in v
     # 약한 쪽도 is_adopted 로는 채택이어야 한다 — 검색이 이걸로 순서를 가른다.
@@ -418,7 +418,7 @@ def test_signal_strengths_are_graded_not_lumped():
     # 검정 상태에 적혀 있어야 한다.
     up = verification_of("이익잉여금 3년 악화")
     down = verification_of("영업이익 3년 악화")
-    assert "채택" in up and "가장 크게 가른다" in up
+    assert "채택" in up and "같은 개수 안에서도 가른다" in up
     assert down.lstrip().startswith("**채택 안 함") and "개선 쪽이 오히려 높다" in down
 
 
@@ -513,11 +513,13 @@ def test_flag_count_bands_are_measured_not_invented():
 
 
 def test_direction_outranks_count_in_the_middle_bands():
-    """개수만으로 순서를 매기면 틀린다 — 3개+악화(8.1%)가 5개+악화아님(5.9%)보다 높다."""
+    """개수만으로 순서를 매기면 틀린다 — 3개+악화(5.5%)가 5개+악화아님(5.7%)에 붙는다."""
     from dartweave.screen.flags import direction_split
 
-    assert "8.1%" in direction_split(3, True)
-    assert "0.0%" in direction_split(4, False)
+    assert "5.5%" in direction_split(3, True)
+    assert "1.9%" in direction_split(4, False)
+    # 두 기준시점을 합쳐 잰 값이라는 걸 문장이 밝혀야 한다 — 한 시점만 쓰면 흔들린다.
+    assert "기준시점 2개 합산" in direction_split(4, True)
     # 3년치가 없으면 '악화 아님' 이 아니라 '모른다' 다.
     unknown = direction_split(4, None)
     assert "판정하지 못했습니다" in unknown and "덜 아는 것" in unknown
@@ -539,10 +541,10 @@ def test_audit_layer_narrows_within_the_same_count():
 
     warned = audit_split(5, "concern", "2023")
     clean = audit_split(5, "none", "2023")
-    assert "43.5%" in warned and "2023 사업연도" in warned
-    assert "5.2%" in clean and "8분의 1" in clean
+    assert "30.5%" in warned and "2023 사업연도" in warned
+    assert "5.0%" in clean and "6분의 1" in clean
     # 둘 다 깨끗하면 실측 부실 0건이었다 — 그 사실을 그대로 낸다.
-    assert "0건" in audit_split(0, "none", "2023")
+    assert "1건" in audit_split(0, "none", "2023")
 
 
 def test_missing_audit_is_not_absence_of_warning():
@@ -567,7 +569,7 @@ def test_audit_says_only_one_base_date_produced_a_verdict():
     from dartweave.screen import flags
 
     warned = flags.audit_split(5, "concern", "2023")
-    assert "×12.28" in warned and "한 시점만 판정" in warned
+    assert "×16.33" in warned and "한 시점만 판정" in warned
     src = Path(flags.__file__).read_text(encoding="utf-8")
     # 왜 채택 신호로 안 올렸는지가 코드에 남아 있어야 한다.
     assert "신호군 부실 8건" in src and "기준을 느슨하게" in src
@@ -587,7 +589,7 @@ def test_bad_disclosure_narrows_but_never_stands_alone():
     from dartweave.screen.flags import disclosure_split
 
     strong = disclosure_split(5, 2)
-    assert "29.9%" in strong and "5.2%" in strong
+    assert "24.0%" in strong and "4.1%" in strong
     alone = disclosure_split(2, 1)
     assert "0건" in alone and "이것만으로 예고되지 않습니다" in alone
     # 명단을 못 받은 것과 지정이 없는 것은 다르다.
@@ -631,5 +633,5 @@ def test_penalty_bands_never_report_a_thin_cell():
     """칸당 20사 미만이면 순서를 말하지 않는다 — 260건 표본에서 이걸 어겨 결론이 뒤집혔다."""
     from dartweave.screen.flags import _PENALTY_BANDS
 
-    assert all(n >= 20 for _, _, _, n, _, _ in _PENALTY_BANDS), \
+    assert all(n >= 20 for _, _, _, n, _ in _PENALTY_BANDS), \
         "20사 미만 구간을 표에 넣으면 잡음을 순서로 읽게 된다"
